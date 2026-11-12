@@ -1,0 +1,95 @@
+/* HomePage Styles */
+.home-hero-section {
+  position: relative;
+  overflow: hidden;
+  padding: 70px 24px 60px 24px;
+  background: var(--gradient-hero, radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.22) 0%, rgba(8, 12, 22, 0) 70%));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.home-hero-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.home-eyebrow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 6px 18px;
+  border-radius: var(--border-radius-pill, 999px);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #a5b4fc;
+  margin-bottom: 20px;
+}
+
+.home-headline {
+  font-size: clamp(2.3rem, 5vw, 3.8rem);
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  line-height: 1.15;
+  margin: 0 auto 18px auto;
+  max-width: 960px;
+  background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 70%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.home-subtitle {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  color: var(--text-muted, #94a3b8);
+  max-width: 780px;
+  margin: 0 auto 34px auto;
+  line-height: 1.6;
+}
+
+.home-role-launcher-card {
+  max-width: 920px;
+  margin: 0 auto;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px;
+  text-align: left;
+}
+
+.home-role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.home-role-card {
+  background: #090d16;
+  border: 1px solid var(--border-strong, #334155);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-role-card:hover {
+  border-color: var(--accent-cyan, #38bdf8);
+  transform: translateY(-2px);
+}
+
+.home-pillars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 22px;
+}
+
+.home-pillar-card {
+  background: var(--bg-card, #0f172a);
+  border: 1px solid var(--border-subtle, #1e293b);
+  border-radius: 16px;
+  padding: 26px;
+}
+

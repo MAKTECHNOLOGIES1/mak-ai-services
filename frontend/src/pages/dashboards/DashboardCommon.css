@@ -1,0 +1,92 @@
+/* Dashboard Common View Styles */
+.dash-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
+.dash-metric-card {
+  background: var(--bg-card, #0f172a);
+  border: 1px solid var(--border-subtle, #1e293b);
+  border-radius: var(--border-radius-md, 12px);
+  padding: 20px;
+  transition: transform 0.15s ease-in-out;
+}
+
+.dash-metric-card:hover {
+  transform: translateY(-2px);
+}
+
+.dash-metric-title {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+.dash-metric-val {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.dash-metric-sub {
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+/* Feature Panel Card */
+.dash-feature-card {
+  background: var(--bg-card, #0f172a);
+  border: 1px solid var(--border-subtle, #1e293b);
+  border-radius: var(--border-radius-lg, 14px);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+/* RAG Search Container */
+.dash-rag-container {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.dash-rag-input {
+  flex: 1;
+  padding: 12px 16px;
+  background: var(--bg-elevated, #1e293b);
+  border: 1px solid var(--border-strong, #334155);
+  border-radius: var(--border-radius-sm, 8px);
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.dash-rag-input:focus {
+  outline: none;
+  border-color: var(--accent-cyan, #38bdf8);
+}
+
+.dash-rag-result {
+  margin-top: 16px;
+  background: #090d16;
+  border: 1px solid var(--border-strong, #334155);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+
+/* Table / List Row */
+.dash-table-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-elevated, #1e293b);
+  padding: 16px 20px;
+  border-radius: 10px;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+

@@ -1,0 +1,92 @@
+/* Auth Pages (Login & Register) Styles */
+.auth-page-wrapper {
+  max-width: 640px;
+  margin: 40px auto 60px auto;
+  padding: 0 20px;
+}
+
+.auth-card {
+  background: var(--gradient-card, linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%));
+  border: 1px solid var(--border-glow, rgba(56, 189, 248, 0.25));
+  border-radius: var(--border-radius-xl, 20px);
+  padding: 36px;
+  box-shadow: var(--shadow-card, 0 25px 50px -12px rgba(0, 0, 0, 0.6));
+}
+
+.auth-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  margin-bottom: 12px;
+}
+
+.auth-role-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.auth-role-preset-btn {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s);
+}
+
+.auth-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input-icon {
+  position: absolute;
+  left: 12px;
+  top: 13px;
+  color: var(--text-dim, #64748b);
+}
+
+.auth-input-field {
+  width: 100%;
+  padding: 12px 14px 12px 40px;
+  background: #090d16;
+  border: 1px solid var(--border-strong, #334155);
+  border-radius: var(--border-radius-md, 10px);
+  color: #ffffff;
+  font-size: 0.92rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.auth-input-field:focus {
+  outline: none;
+  border-color: var(--accent-cyan, #38bdf8);
+}
+
+.auth-password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim, #64748b);
+  cursor: pointer;
+  padding: 0;
+}
+
+.auth-error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #f87171;
+  font-size: 0.82rem;
+}
+

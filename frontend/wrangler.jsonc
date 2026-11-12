@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-ui",
+  "compatibility_date": "2026-11-08",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "env": {
+    "test": {
+      "name": "mak-ui-test"
+    },
+    "prod": {
+      "name": "mak-ui"
+    }
+  }
+}

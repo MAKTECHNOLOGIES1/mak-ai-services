@@ -1,0 +1,11 @@
+# =========================================================================
+# AMK Technologies - Code Owners Configuration (.github/CODEOWNERS)
+# =========================================================================
+# Rules:
+# 1. Any PR modifying any file across the repository requires approval
+#    from the primary repository administrator (@Anilkumarreddy3029).
+# 2. Team members cannot merge until an approving review is provided.
+# =========================================================================
+
+* @Anilkumarreddy3029
+

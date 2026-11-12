@@ -10,11 +10,10 @@ CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- 2. Core Tenant & College Management
 CREATE TABLE IF NOT EXISTS tenants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code VARCHAR(50) UNIQUE NOT NULL, -- e.g. "SRIT-ATP", "JNTUA-CEA"
+    tenant_id VARCHAR(50) PRIMARY KEY,            -- Custom College ID: e.g. "SRIT-ATP", "JNTUA-CEA"
     name VARCHAR(255) NOT NULL,
     university_affiliation VARCHAR(100) DEFAULT 'JNTUA',
-    tier VARCHAR(50) NOT NULL DEFAULT 'STARTER', -- STARTER, PROFESSIONAL, ENTERPRISE
+    tier VARCHAR(50) NOT NULL DEFAULT 'STARTER',  -- STARTER, PROFESSIONAL, ENTERPRISE
     max_students INT NOT NULL DEFAULT 60,
     max_faculty INT NOT NULL DEFAULT 5,
     current_students INT NOT NULL DEFAULT 0,
@@ -27,33 +26,39 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 CREATE TABLE IF NOT EXISTS tenant_modules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id VARCHAR(50) NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     module_key VARCHAR(50) NOT NULL,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE(tenant_id, module_key)
 );
 
--- 3. Identity & Users
-DO $$ BEGIN
-    CREATE TYPE user_role AS ENUM ('STUDENT', 'FACULTY', 'HOD', 'TPO', 'COLLEGE_ADMIN', 'SUPER_ADMIN');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+-- 3. Dynamic Roles & Identity
+CREATE TABLE IF NOT EXISTS roles (
+    role_id VARCHAR(50) PRIMARY KEY,              -- e.g. "ROLE_STUDENT", "ROLE_FACULTY", "ROLE_ADMIN"
+    name VARCHAR(100) NOT NULL,                   -- e.g. "Enrolled Student", "College Faculty"
+    description TEXT,
+    hierarchy_level INT NOT NULL DEFAULT 10,      -- Higher number = higher authority
+    is_self_registerable BOOLEAN NOT NULL DEFAULT FALSE, -- Only TRUE for ROLE_STUDENT
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    permissions JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id VARCHAR(100) PRIMARY KEY,             -- Custom User ID: Student Roll Number or Staff ID
+    tenant_id VARCHAR(50) NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(150) NOT NULL,
-    roll_number VARCHAR(50),
-    department VARCHAR(50) NOT NULL, -- CSE, ECE, EEE, AIDS
-    batch_year VARCHAR(20), -- 2023-2027
-    role user_role NOT NULL DEFAULT 'STUDENT',
+    department VARCHAR(50) NOT NULL DEFAULT 'GENERAL', -- CSE, ECE, EEE, AIDS
+    batch_year VARCHAR(20),                       -- 2022-2026
+    role_id VARCHAR(50) NOT NULL REFERENCES roles(role_id) ON UPDATE CASCADE, -- e.g. "ROLE_STUDENT"
+    created_by_user_id VARCHAR(100) REFERENCES users(user_id), -- Admin's user_id
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(tenant_id, email)
+    CONSTRAINT uq_tenant_email UNIQUE (tenant_id, email)
 );
 
 -- 4. AI Gateway Quotas & Metering

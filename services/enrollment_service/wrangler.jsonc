@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-enrollment-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK ENROLLMENT SERVICE",
+    "SERVICE_NAME": "enrollment_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-enrollment-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-enrollment-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

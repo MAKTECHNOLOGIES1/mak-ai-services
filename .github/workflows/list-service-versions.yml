@@ -1,0 +1,106 @@
+name: List Available Service Versions (R2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter_prefix:
+        description: 'Optional filter prefix (e.g. "builds/identity_service" or leave blank for all)'
+        required: false
+        default: ''
+        type: string
+
+env:
+  R2_BUCKET_NAME: "mak-services-builds"
+  CLOUDFLARE_ACCOUNT_ID: "a8783999a53c63b47959dbf8b88fca11"
+
+jobs:
+  catalog-versions:
+    name: Catalog R2 Builds & Versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query Cloudflare R2 Bucket Objects
+        id: fetch-r2-list
+        run: |
+          echo "Connecting to Cloudflare R2 for account ${{ env.CLOUDFLARE_ACCOUNT_ID }}..."
+          
+          # Query Cloudflare R2 API
+          PREFIX="${{ github.event.inputs.filter_prefix }}"
+          if [ -z "$PREFIX" ]; then
+            PREFIX="builds/"
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+            "https://api.cloudflare.com/client/v4/accounts/${{ env.CLOUDFLARE_ACCOUNT_ID }}/r2/buckets/${{ env.R2_BUCKET_NAME }}/objects?prefix=${PREFIX}" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "Cloudflare HTTP Response Code: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::Cloudflare API returned HTTP $HTTP_CODE"
+            echo "Response: $BODY"
+            echo "api_status=error" >> $GITHUB_OUTPUT
+            echo "error_msg=$(echo $BODY | jq -r '.errors[0].message // "Unknown error"')" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "api_status=success" >> $GITHUB_OUTPUT
+          echo "$BODY" > r2_objects.json
+
+      - name: Generate Visual Version Catalog Table
+        run: |
+          echo "# 📦 Cloudflare R2 - Available Service Build Packages" >> $GITHUB_STEP_SUMMARY
+          echo "**Bucket**: \`${{ env.R2_BUCKET_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Account ID**: \`${{ env.CLOUDFLARE_ACCOUNT_ID }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Report Generated**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ ! -f "r2_objects.json" ]; then
+            echo "⚠️ Could not retrieve objects from Cloudflare R2." >> $GITHUB_STEP_SUMMARY
+            echo "Please ensure the bucket \`${{ env.R2_BUCKET_NAME }}\` is created in Cloudflare R2 and your \`CLOUDFLARE_API_TOKEN\` has R2 permissions." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          COUNT=$(jq '.result | length' r2_objects.json 2>/dev/null || echo "0")
+
+          if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
+            echo "ℹ️ **No service build artifacts found yet in bucket \`${{ env.R2_BUCKET_NAME }}\`.**" >> $GITHUB_STEP_SUMMARY
+            echo "Run the **Cloudflare Services Deployment Pipeline** workflow with a version tag (e.g. \`v1.0.0\`) to create your first stored build." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          echo "Found **$COUNT** build package(s) in R2:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| # | Service | Version Tag | R2 Package Key | Size | Uploaded / Build Date (UTC) | How to Deploy |" >> $GITHUB_STEP_SUMMARY
+          echo "| :-: | :--- | :--- | :--- | :-: | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+
+          # Loop through each item in result array
+          jq -r '.result[] | [.key, .size, .uploaded] | @tsv' r2_objects.json | while IFS=$'\t' read -r key size uploaded; do
+            FILENAME=$(basename "$key")
+            
+            # Extract service name and version: e.g. "identity_service-v1.0.0.tar.gz"
+            CLEAN_NAME=$(echo "$FILENAME" | sed -E 's/\.tar\.gz$//')
+            SERVICE=$(echo "$CLEAN_NAME" | cut -d'-' -f1)
+            VERSION_TAG=$(echo "$CLEAN_NAME" | cut -d'-' -f2-)
+
+            # Format human-readable size
+            if [ "$size" -lt 1024 ]; then
+              HUMAN_SIZE="${size} B"
+            elif [ "$size" -lt 1048576 ]; then
+              HUMAN_SIZE="$((size / 1024)) KB"
+            else
+              HUMAN_SIZE="$((size / 1048576)) MB"
+            fi
+
+            # Format date
+            FORMATTED_DATE=$(echo "$uploaded" | cut -d'.' -f1 | tr 'T' ' ')
+
+            echo "| 🏷️ | \`$SERVICE\` | \`$VERSION_TAG\` | \`$key\` | $HUMAN_SIZE | $FORMATTED_DATE | Enter \`$VERSION_TAG\` in Deploy Pipeline |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 **Tip**: To deploy any version listed above to **Production**, open the **Cloudflare Services Deployment Pipeline**, select the service, choose \`target_env: prod\`, and paste that version tag into **version_tag**!" >> $GITHUB_STEP_SUMMARY
+

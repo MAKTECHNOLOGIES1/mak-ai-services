@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-project-studio-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK PROJECT STUDIO SERVICE",
+    "SERVICE_NAME": "project_studio_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-project-studio-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-project-studio-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-placement-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK PLACEMENT SERVICE",
+    "SERVICE_NAME": "placement_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-placement-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-placement-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

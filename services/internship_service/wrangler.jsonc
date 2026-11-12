@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-internship-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK INTERNSHIP SERVICE",
+    "SERVICE_NAME": "internship_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-internship-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-internship-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

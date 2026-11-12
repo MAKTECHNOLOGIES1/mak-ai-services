@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-identity-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK Identity Service",
+    "DB_SCHEMA": "identity_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-identity-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-identity-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}
+

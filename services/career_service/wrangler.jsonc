@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-career-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK CAREER SERVICE",
+    "SERVICE_NAME": "career_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-career-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-career-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-assessment-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK ASSESSMENT SERVICE",
+    "SERVICE_NAME": "assessment_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-assessment-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-assessment-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

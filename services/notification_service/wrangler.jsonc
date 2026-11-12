@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-notification-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK NOTIFICATION SERVICE",
+    "SERVICE_NAME": "notification_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-notification-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-notification-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-certification-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK CERTIFICATION SERVICE",
+    "SERVICE_NAME": "certification_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-certification-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-certification-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

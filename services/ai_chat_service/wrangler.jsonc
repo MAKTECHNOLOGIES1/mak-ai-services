@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-ai-chat-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK AI CHAT SERVICE",
+    "SERVICE_NAME": "ai_chat_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-ai-chat-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-ai-chat-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

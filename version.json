@@ -1,0 +1,31 @@
+﻿{
+    "name":  "mak-ai-services",
+    "version":  "1.0.0",
+    "services":  {
+                     "mentorship_service":  "1.0.0",
+                     "knowledge_rag_service":  "1.0.0",
+                     "ai_evaluation_service":  "1.0.0",
+                     "faculty_ai_service":  "1.0.0",
+                     "billing_service":  "1.0.0",
+                     "notification_service":  "1.0.0",
+                     "academic_service":  "1.0.0",
+                     "tenant_service":  "1.0.0",
+                     "audit_service":  "1.0.0",
+                     "integration_service":  "1.0.0",
+                     "assessment_service":  "1.0.0",
+                     "career_service":  "1.0.0",
+                     "project_studio_service":  "1.0.0",
+                     "enrollment_service":  "1.0.0",
+                     "hackathon_service":  "1.0.0",
+                     "internship_service":  "1.0.0",
+                     "ai_agent_service":  "1.0.0",
+                     "analytics_service":  "1.0.0",
+                     "api_gateway":  "1.0.0",
+                     "ai_chat_service":  "1.0.0",
+                     "certification_service":  "1.0.0",
+                     "ai_gateway_service":  "1.0.0",
+                     "learning_service":  "1.0.0",
+                     "placement_service":  "1.0.0",
+                     "identity_service":  "1.0.0"
+                 }
+}

@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-billing-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK BILLING SERVICE",
+    "SERVICE_NAME": "billing_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-billing-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-billing-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

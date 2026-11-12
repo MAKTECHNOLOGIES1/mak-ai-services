@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-mentorship-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK MENTORSHIP SERVICE",
+    "SERVICE_NAME": "mentorship_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-mentorship-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-mentorship-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

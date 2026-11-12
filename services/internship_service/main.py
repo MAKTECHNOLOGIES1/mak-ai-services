@@ -9,3 +9,11 @@ app = FastAPI(
 @app.get("/health")
 async def health_check():
     return {"service": "internship_service", "status": "healthy"}
+
+# Cloudflare Workers Python ASGI Handler
+async def on_fetch(request, env):
+    try:
+        import asgi
+        return await asgi.fetch(app, request, env)
+    except ImportError:
+        return app

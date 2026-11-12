@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mak-hackathon-service",
+  "main": "main.py",
+  "compatibility_date": "2026-11-08",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "vars": {
+    "APP_NAME": "AMK HACKATHON SERVICE",
+    "SERVICE_NAME": "hackathon_service"
+  },
+  "env": {
+    "test": {
+      "name": "mak-hackathon-service-test",
+      "vars": {
+        "ENVIRONMENT": "test"
+      }
+    },
+    "prod": {
+      "name": "mak-hackathon-service",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}

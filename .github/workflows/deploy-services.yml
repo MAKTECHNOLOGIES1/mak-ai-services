@@ -43,7 +43,7 @@ on:
           - test
           - prod
       version_tag:
-        description: '3. Version Tag (Leave blank on Test for version.json; Required for Prod)'
+        description: '3. Explicit Version Tag (e.g. v1.0.0; Leave blank to use version.json)'
         required: false
         default: ''
         type: string
@@ -95,40 +95,25 @@ jobs:
             PKG_VER="v$PKG_VER"
           fi
 
-          # 2. Determine target version string
-          if [ "$TARGET_ENV" = "test" ]; then
-            if [ -z "$INPUT_VER" ]; then
-              RESOLVED_VER="$PKG_VER"
-              IS_BLANK=true
-              echo "Notice: Version left blank for Test. Using version.json: $RESOLVED_VER"
-            else
-              RESOLVED_VER="$INPUT_VER"
-              IS_BLANK=false
-              echo "Notice: Using custom version input for Test: $RESOLVED_VER"
-            fi
+          # 2. Determine target explicit version string (No 'latest' concept)
+          if [ -n "$INPUT_VER" ]; then
+            RESOLVED_VER="$INPUT_VER"
+            IS_BLANK=false
+            echo "Notice: Using specified version tag: $RESOLVED_VER"
           else
-            # Production: defaults to latest if blank
-            if [ -z "$INPUT_VER" ]; then
-              RESOLVED_VER="latest"
-              IS_BLANK=true
-              echo "Notice: Version left blank for Prod. Defaulting to 'latest' verified R2 build."
-            else
-              RESOLVED_VER="$INPUT_VER"
-              IS_BLANK=false
-              echo "Notice: Using specified version for Prod: $RESOLVED_VER"
-            fi
+            RESOLVED_VER="$PKG_VER"
+            IS_BLANK=true
+            echo "Notice: Version left blank. Using explicit version from version.json: $RESOLVED_VER"
           fi
 
-          # 3. Determine Cloudflare R2 Object Key
-          if [ "$RESOLVED_VER" = "latest" ]; then
-            R2_KEY="builds/${SERVICE_NAME}-latest.tar.gz"
-          elif [[ "$RESOLVED_VER" == *.tar.gz ]]; then
+          # 3. Determine Cloudflare R2 Object Key (Strictly version-tagged)
+          if [[ "$RESOLVED_VER" == *.tar.gz ]]; then
             R2_KEY="builds/$RESOLVED_VER"
           else
             R2_KEY="builds/${SERVICE_NAME}-${RESOLVED_VER}.tar.gz"
           fi
 
-          # 4. Check if object exists in Cloudflare R2
+          # 4. Check if exact version package exists in Cloudflare R2
           echo "Inspecting R2 bucket for: $R2_KEY..."
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://api.cloudflare.com/client/v4/accounts/${{ env.CLOUDFLARE_ACCOUNT_ID }}/r2/buckets/${{ env.R2_BUCKET_NAME }}/objects/${R2_KEY}" \
@@ -136,7 +121,7 @@ jobs:
 
           echo "Cloudflare R2 inspection status code: $HTTP_STATUS"
 
-          # 5. Route the deployment action based on rules
+          # 5. Route the deployment action
           if [ "$TARGET_ENV" = "test" ]; then
             if [ "$IS_BLANK" = "true" ]; then
               ACTION="build_and_deploy_test"
@@ -159,17 +144,17 @@ jobs:
               fi
             fi
           else
-            # TARGET_ENV == prod (MANDATORY: Must exist in R2)
+            # TARGET_ENV == prod (MANDATORY: Explicit version MUST already exist in R2)
             if [ "$HTTP_STATUS" = "200" ]; then
               ACTION="deploy_prod"
               OVERWRITE="false"
-              echo "✅ Verified: $R2_KEY exists in R2. Safe to deploy to Production."
+              echo "✅ Verified: $R2_KEY exists in R2. Safe to promote to Production."
             else
               ACTION="fail_prod"
               OVERWRITE="false"
               echo "::error::❌ DEPLOYMENT BLOCKED: Version '$RESOLVED_VER' ($R2_KEY) was NOT found in Cloudflare R2!"
               echo "Production deployments must strictly be promoted from existing, tested R2 builds."
-              echo "Please build and test version '$RESOLVED_VER' in Test first before deploying to Production."
+              echo "Please build and test version '$RESOLVED_VER' in Test first before promoting to Production."
               exit 1
             fi
           fi
@@ -243,25 +228,18 @@ jobs:
           tar -czf package.tar.gz -C build_output .
           echo "Created package.tar.gz: $(du -sh package.tar.gz | cut -f1)"
 
-      - name: Save / Overwrite Version in Cloudflare R2
+      - name: Save Version in Cloudflare R2
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote
 
-      - name: Update 'latest' Pointer in Cloudflare R2
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object put ${{ env.R2_BUCKET_NAME }}/builds/${{ needs.resolve-and-check.outputs.service_name }}-latest.tar.gz --file=package.tar.gz --remote
-
       - name: Record Storage Metadata
         run: |
           echo "### 📦 Cloudflare R2 Build Uploaded" >> $GITHUB_STEP_SUMMARY
           echo "- **Service**: \`${{ needs.resolve-and-check.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Tag**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **R2 File**: \`${{ needs.resolve-and-check.outputs.r2_key }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Rebuild Overwrite**: ${{ needs.resolve-and-check.outputs.overwrite == 'true' && '⚠️ Overwrote existing version' || 'New build created' }}" >> $GITHUB_STEP_SUMMARY
 
@@ -336,7 +314,6 @@ jobs:
           echo "### 🧪 Test Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "- **Service**: \`${{ needs.resolve-and-check.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployed Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Mode**: ${{ needs.resolve-and-check.outputs.action == 'deploy_existing_test' && 'Existing R2 Build' || 'Fresh Build (version.json)' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Worker**: \`${CF_NAME}-test\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Live URL**: [https://${CF_NAME}-test.anilkumarreddy3029.workers.dev](https://${CF_NAME}-test.anilkumarreddy3029.workers.dev)" >> $GITHUB_STEP_SUMMARY
 

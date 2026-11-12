@@ -103,4 +103,3 @@ jobs:
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> 💡 **Tip**: To deploy any version listed above to **Production**, open the **Cloudflare Services Deployment Pipeline**, select the service, choose \`target_env: prod\`, and paste that version tag into **version_tag**!" >> $GITHUB_STEP_SUMMARY
-

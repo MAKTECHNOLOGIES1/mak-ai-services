@@ -37,7 +37,7 @@ mak-ai-services/                               <-- SINGLE GIT REPOSITORY ROOT
 │   ├── tailwind.config.js
 │   └── vite.config.js
 │
-├── services/                                  <-- STUDENT 2 & TECH LEAD (Backend Services)
+├── backend_services/                          <-- STUDENT 2 & TECH LEAD (Backend Services)
 │   ├── api_gateway/                           <-- Central Reverse Proxy & Rate Limiter (Port 8000)
 │   │   ├── core/                              (config.py, auth_middleware.py, rate_limiter.py)
 │   │   ├── routes/                            (proxy_routes.py, health_routes.py)
@@ -165,7 +165,7 @@ Assigned to: **Student Developer 1 (React 18 + Vite + Tailwind CSS)**
 
 Assigned to: **Student Developer 2 & Technical Lead (Python 3.12 + FastAPI)**
 
-Every single service under `services/<service_name>/` follows the exact same **Layered Clean Architecture**:
+Every single service under `backend_services/<service_name>/` follows the exact same **Layered Clean Architecture**:
 
 ```
  [HTTP Request]

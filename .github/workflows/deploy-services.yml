@@ -185,7 +185,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: 'pip'
-          cache-dependency-path: 'services/${{ needs.resolve-and-check.outputs.service_name }}/requirements.txt'
+          cache-dependency-path: 'backend_services/${{ needs.resolve-and-check.outputs.service_name }}/requirements.txt'
 
       - name: Install Linting & Test Tools
         run: |
@@ -194,15 +194,15 @@ jobs:
 
       - name: Install Service Dependencies
         run: |
-          pip install -r services/${{ needs.resolve-and-check.outputs.service_name }}/requirements.txt
+          pip install -r backend_services/${{ needs.resolve-and-check.outputs.service_name }}/requirements.txt
 
       - name: Code Quality & Lint Check (Ruff)
         run: |
-          ruff check services/${{ needs.resolve-and-check.outputs.service_name }} --ignore E501
+          ruff check backend_services/${{ needs.resolve-and-check.outputs.service_name }} --ignore E501
 
       - name: Syntax & Import Verification
         run: |
-          python -m py_compile services/${{ needs.resolve-and-check.outputs.service_name }}/main.py
+          python -m py_compile backend_services/${{ needs.resolve-and-check.outputs.service_name }}/main.py
           echo "✅ Syntax verification passed for ${{ needs.resolve-and-check.outputs.service_name }}"
 
   # =========================================================================
@@ -222,7 +222,7 @@ jobs:
         run: |
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
           mkdir -p build_output
-          cp -r services/$SERVICE/* build_output/
+          cp -r backend_services/$SERVICE/* build_output/
           
           # Create compressed archive
           tar -czf package.tar.gz -C build_output .
@@ -281,10 +281,10 @@ jobs:
           tar -xzf package.tar.gz -C deploy_dir
           
           # Copy wrangler config if present
-          if [ -f "services/$SERVICE/wrangler.jsonc" ]; then
-            cp "services/$SERVICE/wrangler.jsonc" deploy_dir/
-          elif [ -f "services/$SERVICE/wrangler.json" ]; then
-            cp "services/$SERVICE/wrangler.json" deploy_dir/
+          if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
+            cp "backend_services/$SERVICE/wrangler.jsonc" deploy_dir/
+          elif [ -f "backend_services/$SERVICE/wrangler.json" ]; then
+            cp "backend_services/$SERVICE/wrangler.json" deploy_dir/
           fi
           
           echo "Extracted service deployment contents:"
@@ -349,10 +349,10 @@ jobs:
           tar -xzf package.tar.gz -C deploy_dir
           
           # Copy wrangler config if present
-          if [ -f "services/$SERVICE/wrangler.jsonc" ]; then
-            cp "services/$SERVICE/wrangler.jsonc" deploy_dir/
-          elif [ -f "services/$SERVICE/wrangler.json" ]; then
-            cp "services/$SERVICE/wrangler.json" deploy_dir/
+          if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
+            cp "backend_services/$SERVICE/wrangler.jsonc" deploy_dir/
+          elif [ -f "backend_services/$SERVICE/wrangler.json" ]; then
+            cp "backend_services/$SERVICE/wrangler.json" deploy_dir/
           fi
           
           echo "Extracted verified production assets:"

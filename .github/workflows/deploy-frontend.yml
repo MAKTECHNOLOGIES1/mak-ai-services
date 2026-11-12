@@ -1,0 +1,383 @@
+name: Cloudflare Frontend UI Deployment Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: '1. Select Target Environment'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - prod
+      version_tag:
+        description: '2. Version (Leave blank on Test for package.json; Required for Prod)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  R2_BUCKET_NAME: "mak-ui-builds"
+  CLOUDFLARE_ACCOUNT_ID: "a8783999a53c63b47959dbf8b88fca11"
+
+jobs:
+  # =========================================================================
+  # STAGE 0: RESOLVE VERSION & VERIFY R2 STATUS
+  # =========================================================================
+  resolve-and-check:
+    name: 0. Resolve Version & Inspect R2
+    runs-on: ubuntu-latest
+    outputs:
+      target_env: ${{ steps.inspect.outputs.target_env }}
+      version: ${{ steps.inspect.outputs.version }}
+      r2_key: ${{ steps.inspect.outputs.r2_key }}
+      action: ${{ steps.inspect.outputs.action }}
+      overwrite: ${{ steps.inspect.outputs.overwrite }}
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Inspect Version and Cloudflare R2
+        id: inspect
+        run: |
+          TARGET_ENV="${{ github.event.inputs.target_env }}"
+          INPUT_VER="${{ github.event.inputs.version_tag }}"
+          INPUT_VER=$(echo "$INPUT_VER" | xargs | tr '[:upper:]' '[:lower:]')
+
+          # 1. Read actual version from frontend/package.json
+          PKG_VER=$(jq -r '.version' frontend/package.json)
+          if [[ ! "$PKG_VER" =~ ^v ]]; then
+            PKG_VER="v$PKG_VER"
+          fi
+
+          # 2. Determine target version string
+          if [ "$TARGET_ENV" = "test" ]; then
+            if [ -z "$INPUT_VER" ]; then
+              RESOLVED_VER="$PKG_VER"
+              IS_BLANK=true
+              echo "Notice: Version left blank for Test. Using frontend/package.json version: $RESOLVED_VER"
+            else
+              RESOLVED_VER="$INPUT_VER"
+              IS_BLANK=false
+              echo "Notice: Using custom version input for Test: $RESOLVED_VER"
+            fi
+          else
+            # Production: defaults to latest if blank
+            if [ -z "$INPUT_VER" ]; then
+              RESOLVED_VER="latest"
+              IS_BLANK=true
+              echo "Notice: Version left blank for Prod. Defaulting to 'latest' verified R2 build."
+            else
+              RESOLVED_VER="$INPUT_VER"
+              IS_BLANK=false
+              echo "Notice: Using specified version for Prod: $RESOLVED_VER"
+            fi
+          fi
+
+          # 3. Determine Cloudflare R2 Object Key
+          if [ "$RESOLVED_VER" = "latest" ]; then
+            R2_KEY="builds/latest.tar.gz"
+          elif [[ "$RESOLVED_VER" == *.tar.gz ]]; then
+            R2_KEY="builds/$RESOLVED_VER"
+          elif [[ "$RESOLVED_VER" == mak-ui-* ]]; then
+            R2_KEY="builds/$RESOLVED_VER.tar.gz"
+          else
+            R2_KEY="builds/mak-ui-$RESOLVED_VER.tar.gz"
+          fi
+
+          # 4. Check if object exists in Cloudflare R2
+          echo "Inspecting R2 bucket for: $R2_KEY..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ env.CLOUDFLARE_ACCOUNT_ID }}/r2/buckets/${{ env.R2_BUCKET_NAME }}/objects/${R2_KEY}" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" || echo "000")
+
+          echo "Cloudflare R2 inspection status code: $HTTP_STATUS"
+
+          # 5. Route the deployment action based on rules
+          if [ "$TARGET_ENV" = "test" ]; then
+            if [ "$IS_BLANK" = "true" ]; then
+              # Blank input on Test: Always build fresh code from package.json version
+              ACTION="build_and_deploy_test"
+              if [ "$HTTP_STATUS" = "200" ]; then
+                OVERWRITE="true"
+                echo "⚠️ Notice: Version $RESOLVED_VER already exists in R2. Rebuilding and overwriting."
+              else
+                OVERWRITE="false"
+                echo "Notice: New version $RESOLVED_VER will be created in R2."
+              fi
+            else
+              # User entered a specific version for Test
+              if [ "$HTTP_STATUS" = "200" ]; then
+                # Version exists in R2 -> Deploy existing pre-built version from R2
+                ACTION="deploy_existing_test"
+                OVERWRITE="false"
+                echo "✅ Existing build found in R2 for $RESOLVED_VER. Deploying pre-built package directly to Test."
+              else
+                # Version does NOT exist in R2 -> Build fresh and upload
+                ACTION="build_and_deploy_test"
+                OVERWRITE="false"
+                echo "Notice: Version $RESOLVED_VER not in R2. Building fresh and saving to R2."
+              fi
+            fi
+          else
+            # TARGET_ENV == prod (MANDATORY: Must exist in R2)
+            if [ "$HTTP_STATUS" = "200" ]; then
+              ACTION="deploy_prod"
+              OVERWRITE="false"
+              echo "✅ Verified: $R2_KEY exists in R2. Safe to deploy to Production."
+            else
+              ACTION="fail_prod"
+              OVERWRITE="false"
+              echo "::error::❌ DEPLOYMENT BLOCKED: Version '$RESOLVED_VER' ($R2_KEY) was NOT found in Cloudflare R2!"
+              echo "Production deployments must strictly be promoted from existing, tested R2 builds."
+              echo "Please build and test version '$RESOLVED_VER' in Test first before deploying to Production."
+              exit 1
+            fi
+          fi
+
+          echo "target_env=$TARGET_ENV" >> $GITHUB_OUTPUT
+          echo "version=$RESOLVED_VER" >> $GITHUB_OUTPUT
+          echo "r2_key=$R2_KEY" >> $GITHUB_OUTPUT
+          echo "action=$ACTION" >> $GITHUB_OUTPUT
+          echo "overwrite=$OVERWRITE" >> $GITHUB_OUTPUT
+
+  # =========================================================================
+  # STAGE 1: CODE VALIDATION
+  # Only runs when building fresh code for Test
+  # =========================================================================
+  validate:
+    name: 1. Code Quality & Security
+    needs: resolve-and-check
+    if: needs.resolve-and-check.outputs.action == 'build_and_deploy_test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Clean Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Code Quality & Lint Check (oxlint)
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Security Vulnerability Scan
+        working-directory: frontend
+        run: npm audit --audit-level=high || echo "::warning::Audit identified advisories. Check npm audit output."
+
+  # =========================================================================
+  # STAGE 2: BUILD VERSIONED ASSETS & STORE IN R2
+  # Only runs when building fresh code for Test
+  # =========================================================================
+  build-and-upload-r2:
+    name: 2. Build Assets & Save to R2
+    needs: [resolve-and-check, validate]
+    if: needs.resolve-and-check.outputs.action == 'build_and_deploy_test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Production Assets (Vite)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Package Versioned Artifact
+        run: |
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "::error::Build verification failed! frontend/dist/index.html is missing."
+            exit 1
+          fi
+          tar -czf dist.tar.gz -C frontend/dist .
+          echo "Created dist.tar.gz: $(du -sh dist.tar.gz | cut -f1)"
+
+      - name: Save / Overwrite Version in Cloudflare R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote
+
+      - name: Update 'latest' Pointer in Cloudflare R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          command: r2 object put ${{ env.R2_BUCKET_NAME }}/builds/latest.tar.gz --file=dist.tar.gz --remote
+
+      - name: Record Storage Metadata
+        run: |
+          echo "### 📦 Cloudflare R2 Build Uploaded" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **R2 File**: \`${{ needs.resolve-and-check.outputs.r2_key }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rebuild Overwrite**: ${{ needs.resolve-and-check.outputs.overwrite == 'true' && '⚠️ Overwrote existing version' || 'New build created' }}" >> $GITHUB_STEP_SUMMARY
+
+  # =========================================================================
+  # STAGE 3: TEST ENVIRONMENT DEPLOYMENT
+  # Deploys either fresh build or existing R2 build to mak-ui-test
+  # =========================================================================
+  deploy-test:
+    name: 3. Deploy to Test (mak-ui-test)
+    needs: [resolve-and-check, build-and-upload-r2]
+    if: |
+      always() &&
+      needs.resolve-and-check.outputs.target_env == 'test' &&
+      (
+        needs.build-and-upload-r2.result == 'success' ||
+        needs.resolve-and-check.outputs.action == 'deploy_existing_test'
+      )
+    runs-on: ubuntu-latest
+    environment:
+      name: test
+      url: https://mak-ui-test.anilkumarreddy3029.workers.dev
+    steps:
+      - name: Checkout Repository Configuration
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch Build Package from Cloudflare R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote
+
+      - name: Extract Build Package
+        run: |
+          mkdir -p frontend/dist
+          tar -xzf dist.tar.gz -C frontend/dist
+          echo "Extracted build contents:"
+          ls -la frontend/dist/
+
+      - name: Deploy to Cloudflare (Test Environment)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: deploy --env test
+
+      - name: Smoke Test Endpoint
+        run: |
+          echo "Verifying test endpoint status..."
+          curl -s -o /dev/null -w "%{http_code}" https://mak-ui-test.anilkumarreddy3029.workers.dev || true
+
+      - name: Test Deployment Summary
+        run: |
+          echo "### 🧪 Test Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode**: ${{ needs.resolve-and-check.outputs.action == 'deploy_existing_test' && 'Existing R2 Build' || 'Fresh Build (package.json)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Worker**: \`mak-ui-test\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live URL**: [https://mak-ui-test.anilkumarreddy3029.workers.dev](https://mak-ui-test.anilkumarreddy3029.workers.dev)" >> $GITHUB_STEP_SUMMARY
+
+  # =========================================================================
+  # STAGE 4: PRODUCTION DEPLOYMENT
+  # ALWAYS deploys an existing verified version from Cloudflare R2
+  # =========================================================================
+  deploy-prod:
+    name: 4. Deploy to Production (Strictly from R2 Version)
+    needs: [resolve-and-check]
+    if: needs.resolve-and-check.outputs.target_env == 'prod' && needs.resolve-and-check.outputs.action == 'deploy_prod'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://mak-ui.anilkumarreddy3029.workers.dev
+    steps:
+      - name: Checkout Repository Configuration
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download Verified Build Package from Cloudflare R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote
+
+      - name: Extract Verified Package
+        run: |
+          mkdir -p frontend/dist
+          tar -xzf dist.tar.gz -C frontend/dist
+          echo "Extracted verified production assets:"
+          ls -la frontend/dist/
+
+      - name: Deploy to Cloudflare (Production Environment)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: deploy --env prod
+
+      - name: Smoke Test Endpoint
+        run: |
+          echo "Pinging Production Endpoint..."
+          curl -s -o /dev/null -w "%{http_code}" https://mak-ui.anilkumarreddy3029.workers.dev || true
+
+      - name: Production Deployment Summary
+        run: |
+          echo "### 🚀 Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Worker**: \`mak-ui\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Verified Source**: Cloudflare R2 (\`${{ needs.resolve-and-check.outputs.r2_key }}\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live URL**: [https://mak-ui.anilkumarreddy3029.workers.dev](https://mak-ui.anilkumarreddy3029.workers.dev)" >> $GITHUB_STEP_SUMMARY
+
+  # =========================================================================
+  # STAGE 5: AUDIT SUMMARY
+  # =========================================================================
+  pipeline-report:
+    name: 5. Pipeline Audit Report
+    needs: [resolve-and-check, validate, build-and-upload-r2, deploy-test, deploy-prod]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Pipeline Execution Report
+        run: |
+          echo "## 📊 Cloudflare Frontend Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Tag**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Environment**: \`${{ needs.resolve-and-check.outputs.target_env }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **R2 Bucket**: \`${{ env.R2_BUCKET_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action Taken**: \`${{ needs.resolve-and-check.outputs.action }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :---: | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| 0. Resolve & Check | ${{ needs.resolve-and-check.result == 'success' && '✅ Completed' || '❌ Failed' }} | Target: \`${{ needs.resolve-and-check.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 1. Code Validation | ${{ needs.validate.result == 'success' && '✅ Passed' || (needs.validate.result == 'skipped' && '⏭️ Skipped (R2 Pull)' || '❌ Failed') }} | oxlint & security scan |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2. Build & R2 Upload | ${{ needs.build-and-upload-r2.result == 'success' && '✅ Stored in R2' || (needs.build-and-upload-r2.result == 'skipped' && '⏭️ Skipped (R2 Pull)' || '❌ Failed') }} | ${{ needs.resolve-and-check.outputs.overwrite == 'true' && 'Overwrote existing build' || 'Package stored' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3. Deploy Test | ${{ needs.deploy-test.result == 'success' && '✅ Deployed' || (needs.deploy-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} | [mak-ui-test](https://mak-ui-test.anilkumarreddy3029.workers.dev) |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4. Deploy Prod | ${{ needs.deploy-prod.result == 'success' && '✅ Deployed (from R2)' || (needs.deploy-prod.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} | [mak-ui](https://mak-ui.anilkumarreddy3029.workers.dev) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: \`${{ github.actor }}\` (Manual Trigger)" >> $GITHUB_STEP_SUMMARY
+

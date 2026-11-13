@@ -239,11 +239,21 @@ jobs:
           tar -czf package.tar.gz -C build_output .
           echo "Created package.tar.gz: $(du -sh package.tar.gz | cut -f1)"
 
+      - name: Ensure Cloudflare R2 Bucket Exists
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
+          command: r2 bucket create ${{ env.R2_BUCKET_NAME }}
+
       - name: Save Version in Cloudflare R2
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz
 
       - name: Record Storage Metadata
@@ -297,6 +307,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz
 
       - name: Extract Build Package
@@ -387,6 +398,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz
 
       - name: Extract Verified Package

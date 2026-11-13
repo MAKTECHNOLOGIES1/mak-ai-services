@@ -221,11 +221,21 @@ jobs:
           tar -czf dist.tar.gz -C frontend/dist .
           echo "Created dist.tar.gz: $(du -sh dist.tar.gz | cut -f1)"
 
+      - name: Ensure Cloudflare R2 Bucket Exists
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
+          command: r2 bucket create ${{ env.R2_BUCKET_NAME }}
+
       - name: Save / Overwrite Version in Cloudflare R2
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz
 
       - name: Update 'latest' Pointer in Cloudflare R2
@@ -233,6 +243,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object put ${{ env.R2_BUCKET_NAME }}/builds/latest.tar.gz --file=dist.tar.gz
 
       - name: Record Storage Metadata
@@ -276,6 +287,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz
 
       - name: Extract Build Package
@@ -334,6 +346,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.161.0"
           command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz
 
       - name: Extract Verified Package

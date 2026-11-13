@@ -41,6 +41,8 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Inspect Version and Cloudflare R2
         id: inspect
@@ -158,6 +160,8 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js Runtime
         uses: actions/setup-node@v4
@@ -190,6 +194,8 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js Runtime
         uses: actions/setup-node@v4
@@ -257,6 +263,8 @@ jobs:
     steps:
       - name: Checkout Repository Configuration
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js Runtime
         uses: actions/setup-node@v4
@@ -313,6 +321,8 @@ jobs:
     steps:
       - name: Checkout Repository Configuration
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js Runtime
         uses: actions/setup-node@v4

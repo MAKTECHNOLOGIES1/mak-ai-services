@@ -220,14 +220,14 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote
+          command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz
 
       - name: Update 'latest' Pointer in Cloudflare R2
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object put ${{ env.R2_BUCKET_NAME }}/builds/latest.tar.gz --file=dist.tar.gz --remote
+          command: r2 object put ${{ env.R2_BUCKET_NAME }}/builds/latest.tar.gz --file=dist.tar.gz
 
       - name: Record Storage Metadata
         run: |
@@ -268,7 +268,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote
+          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz
 
       - name: Extract Build Package
         run: |
@@ -324,7 +324,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote
+          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz
 
       - name: Extract Verified Package
         run: |

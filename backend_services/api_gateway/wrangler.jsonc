@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mak-api-gateway",
   "main": "main.py",
@@ -8,18 +8,23 @@
   ],
   "vars": {
     "APP_NAME": "AMK API GATEWAY",
-    "SERVICE_NAME": "api_gateway"
+    "SERVICE_NAME": "api_gateway",
+    "ENVIRONMENT": "development"
   },
   "env": {
     "test": {
       "name": "mak-api-gateway-test",
       "vars": {
+        "APP_NAME": "AMK API GATEWAY",
+        "SERVICE_NAME": "api_gateway",
         "ENVIRONMENT": "test"
       }
     },
     "prod": {
       "name": "mak-api-gateway",
       "vars": {
+        "APP_NAME": "AMK API GATEWAY",
+        "SERVICE_NAME": "api_gateway",
         "ENVIRONMENT": "production"
       }
     }

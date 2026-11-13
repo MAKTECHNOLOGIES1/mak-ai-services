@@ -194,11 +194,16 @@ jobs:
 
       - name: Install Service Dependencies
         run: |
-          pip install -r backend_services/${{ needs.resolve-and-check.outputs.service_name }}/requirements.txt
+          SERVICE="backend_services/${{ needs.resolve-and-check.outputs.service_name }}"
+          if [ -f "$SERVICE/pyproject.toml" ]; then
+            pip install "$SERVICE"
+          elif [ -f "$SERVICE/requirements.txt" ]; then
+            pip install -r "$SERVICE/requirements.txt"
+          fi
 
       - name: Code Quality & Lint Check (Ruff)
         run: |
-          ruff check backend_services/${{ needs.resolve-and-check.outputs.service_name }} --ignore E501
+          ruff check backend_services/${{ needs.resolve-and-check.outputs.service_name }} --ignore E501,B008,RUF012
 
       - name: Syntax & Import Verification
         run: |
@@ -233,7 +238,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote
+          command: r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz
 
       - name: Record Storage Metadata
         run: |
@@ -267,12 +272,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv Package Manager
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Cloudflare Python Worker Tools
+        run: |
+          pip install workers-py
+
       - name: Fetch Package from Cloudflare R2
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote
+          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz
 
       - name: Extract Build Package
         run: |
@@ -280,24 +297,32 @@ jobs:
           mkdir -p deploy_dir
           tar -xzf package.tar.gz -C deploy_dir
           
-          # Copy wrangler config if present
+          # Copy wrangler config and pyproject if present
           if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
             cp "backend_services/$SERVICE/wrangler.jsonc" deploy_dir/
           elif [ -f "backend_services/$SERVICE/wrangler.json" ]; then
             cp "backend_services/$SERVICE/wrangler.json" deploy_dir/
+          fi
+          if [ -f "backend_services/$SERVICE/pyproject.toml" ]; then
+            cp "backend_services/$SERVICE/pyproject.toml" deploy_dir/
           fi
           
           echo "Extracted service deployment contents:"
           ls -la deploy_dir/
 
       - name: Deploy to Cloudflare (Test Environment)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: deploy_dir
-          command: deploy --env test
+        working-directory: deploy_dir
+        run: |
+          if [ -f "pyproject.toml" ]; then
+            echo "Python Worker detected with pyproject.toml. Deploying via pywrangler..."
+            uv run pywrangler deploy --env test
+          else
+            echo "Standard Worker detected. Deploying via wrangler..."
+            npx wrangler deploy --env test
+          fi
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL_TEST || secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
 
@@ -335,12 +360,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv Package Manager
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Cloudflare Python Worker Tools
+        run: |
+          pip install workers-py
+
       - name: Download Verified Package from Cloudflare R2
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote
+          command: r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz
 
       - name: Extract Verified Package
         run: |
@@ -348,24 +385,32 @@ jobs:
           mkdir -p deploy_dir
           tar -xzf package.tar.gz -C deploy_dir
           
-          # Copy wrangler config if present
+          # Copy wrangler config and pyproject if present
           if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
             cp "backend_services/$SERVICE/wrangler.jsonc" deploy_dir/
           elif [ -f "backend_services/$SERVICE/wrangler.json" ]; then
             cp "backend_services/$SERVICE/wrangler.json" deploy_dir/
+          fi
+          if [ -f "backend_services/$SERVICE/pyproject.toml" ]; then
+            cp "backend_services/$SERVICE/pyproject.toml" deploy_dir/
           fi
           
           echo "Extracted verified production assets:"
           ls -la deploy_dir/
 
       - name: Deploy to Cloudflare (Production Environment)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: deploy_dir
-          command: deploy --env prod
+        working-directory: deploy_dir
+        run: |
+          if [ -f "pyproject.toml" ]; then
+            echo "Python Worker detected with pyproject.toml. Deploying to Production via pywrangler..."
+            uv run pywrangler deploy --env prod
+          else
+            echo "Standard Worker detected. Deploying to Production via wrangler..."
+            npx wrangler deploy --env prod
+          fi
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL_PROD || secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
 

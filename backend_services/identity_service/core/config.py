@@ -3,11 +3,11 @@ Identity Service Configuration
 Supports Supabase PostgreSQL, Cloudflare D1/Hyperdrive, and any Cloud Postgres
 """
 
-import os
 from pathlib import Path
 from urllib.parse import quote_plus
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Look for .env at service level, root monorepo, or current working directory
 SERVICE_DIR = Path(__file__).resolve().parents[1]

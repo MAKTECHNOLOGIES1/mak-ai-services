@@ -238,7 +238,7 @@ jobs:
       - name: Save / Overwrite Version in Cloudflare R2
         continue-on-error: true
         run: |
-          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz || echo "Notice: R2 upload skipped. Continuing with direct deployment."
+          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote || echo "Notice: R2 upload skipped. Continuing with direct deployment."
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -246,7 +246,7 @@ jobs:
       - name: Update 'latest' Pointer in Cloudflare R2
         continue-on-error: true
         run: |
-          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/builds/latest.tar.gz --file=dist.tar.gz || echo "Notice: Latest pointer update skipped."
+          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/builds/latest.tar.gz --file=dist.tar.gz --remote || echo "Notice: Latest pointer update skipped."
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -293,7 +293,7 @@ jobs:
       - name: Fetch Build Package from Cloudflare R2
         continue-on-error: true
         run: |
-          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz || echo "Notice: dist.tar.gz not in R2. Falling back to direct build..."
+          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote || rm -f dist.tar.gz
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -301,11 +301,12 @@ jobs:
       - name: Prepare Frontend Build Directory
         run: |
           mkdir -p frontend/dist
-          if [ -f "dist.tar.gz" ]; then
-            echo "Extracting dist.tar.gz from R2..."
+          if [ -s "dist.tar.gz" ] && tar -tzf dist.tar.gz >/dev/null 2>&1; then
+            echo "Extracting valid dist.tar.gz from R2..."
             tar -xzf dist.tar.gz -C frontend/dist
           else
             echo "Building production bundle directly from branch '${{ github.ref_name }}'..."
+            rm -f dist.tar.gz
             cd frontend
             npm ci
             npm run build
@@ -363,7 +364,7 @@ jobs:
       - name: Download Verified Build Package from Cloudflare R2
         continue-on-error: true
         run: |
-          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz || echo "Notice: dist.tar.gz not in R2. Building directly from source..."
+          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=dist.tar.gz --remote || rm -f dist.tar.gz
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -371,11 +372,12 @@ jobs:
       - name: Prepare Frontend Build Directory
         run: |
           mkdir -p frontend/dist
-          if [ -f "dist.tar.gz" ]; then
+          if [ -s "dist.tar.gz" ] && tar -tzf dist.tar.gz >/dev/null 2>&1; then
             echo "Extracting verified dist.tar.gz..."
             tar -xzf dist.tar.gz -C frontend/dist
           else
             echo "Building production bundle directly from branch '${{ github.ref_name }}'..."
+            rm -f dist.tar.gz
             cd frontend
             npm ci
             npm run build

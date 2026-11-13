@@ -268,7 +268,7 @@ jobs:
       - name: Save Version in Cloudflare R2
         continue-on-error: true
         run: |
-          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz || echo "Notice: R2 upload skipped or unpermitted. Direct deployment fallback is active."
+          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote || echo "Notice: R2 upload skipped or unpermitted. Direct deployment fallback is active."
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -325,7 +325,7 @@ jobs:
       - name: Fetch Package from Cloudflare R2
         continue-on-error: true
         run: |
-          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz || echo "Package not found in R2. Deploying directly from source repository..."
+          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote || rm -f package.tar.gz
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -334,11 +334,12 @@ jobs:
         run: |
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
           mkdir -p deploy_dir
-          if [ -f "package.tar.gz" ]; then
-            echo "Extracting package.tar.gz..."
+          if [ -s "package.tar.gz" ] && tar -tzf package.tar.gz >/dev/null 2>&1; then
+            echo "Extracting valid package.tar.gz from R2..."
             tar -xzf package.tar.gz -C deploy_dir
           else
-            echo "Notice: package.tar.gz not in R2. Deploying directly from source repository..."
+            echo "Notice: package.tar.gz not in R2 or invalid. Deploying directly from source repository branch '${{ github.ref_name }}'..."
+            rm -f package.tar.gz
             cp -r backend_services/$SERVICE/* deploy_dir/
           fi
           
@@ -455,7 +456,7 @@ open('deploy_dir/pyproject.toml', 'w').write(pyproject_content)
       - name: Download Verified Package from Cloudflare R2
         continue-on-error: true
         run: |
-          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz || echo "Notice: Package not found in R2. Promoting directly from source repository..."
+          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote || rm -f package.tar.gz
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -464,10 +465,12 @@ open('deploy_dir/pyproject.toml', 'w').write(pyproject_content)
         run: |
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
           mkdir -p deploy_dir
-          if [ -f "package.tar.gz" ]; then
+          if [ -s "package.tar.gz" ] && tar -tzf package.tar.gz >/dev/null 2>&1; then
+            echo "Extracting valid verified package.tar.gz from R2..."
             tar -xzf package.tar.gz -C deploy_dir
           else
-            echo "Notice: package.tar.gz not in R2. Promoting directly from source repository..."
+            echo "Notice: package.tar.gz not in R2 or invalid. Promoting directly from source repository branch '${{ github.ref_name }}'..."
+            rm -f package.tar.gz
             cp -r backend_services/$SERVICE/* deploy_dir/
           fi
           

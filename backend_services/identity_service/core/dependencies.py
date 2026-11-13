@@ -5,14 +5,13 @@ Using custom user_id, tenant_id, and role_id
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import decode_access_token
-from models.user_model import User
 from models.role_model import Role
+from models.user_model import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -46,7 +45,7 @@ async def get_current_user(
 
     return user
 
-def require_roles(allowed_role_ids: List[str]):
+def require_roles(allowed_role_ids: list[str]):
     """Checks if current user's role_id is in allowed roles"""
     async def role_checker(
         current_user: User = Depends(get_current_user)

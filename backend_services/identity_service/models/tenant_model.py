@@ -3,12 +3,16 @@ Tenant Model for Identity Service
 Uses custom, meaningful tenant_id (e.g. "SRIT-ATP", "JNTUA-CEA")
 """
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, func
+from typing import ClassVar
+
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
+
 from core.database import Base
+
 
 class Tenant(Base):
     __tablename__ = "tenants"
-    __table_args__ = {"schema": "identity_service"}
+    __table_args__: ClassVar[dict[str, str]] = {"schema": "identity_service"}
 
     # Custom College Identifier (e.g. "SRIT-ATP")
     tenant_id = Column(String(50), primary_key=True, index=True)
@@ -25,4 +29,3 @@ class Tenant(Base):
 
     def __repr__(self):
         return f"<Tenant tenant_id={self.tenant_id} name={self.name}>"
-

@@ -1,0 +1,18 @@
+# Ruff Configuration for AMK Multi-Tenant Microservices
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = [
+    "E501",   # Line too long
+    "B008",   # Do not perform function call `Depends` in argument defaults (Standard FastAPI pattern)
+    "RUF012", # Mutable default value for class attribute (SQLAlchemy models)
+]
+
+[lint.isort]
+combine-as-imports = true
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
+

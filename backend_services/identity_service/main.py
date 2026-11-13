@@ -4,14 +4,19 @@ Handles authentication, dynamic roles, and user provisioning
 """
 
 from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from core.config import settings
 from core.database import AsyncSessionLocal
-from services.role_service import RoleService
 from routes.auth_routes import router as auth_router
 from routes.role_routes import router as role_router
 from routes.user_routes import router as user_router
+from services.role_service import RoleService
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,7 +25,7 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as session:
             await RoleService.seed_default_roles_if_missing(session)
     except Exception as e:
-        print(f"[Warning] Could not seed roles on startup (DB connection may not be active yet): {e}")
+        logger.warning("Could not seed roles on startup (DB connection may not be active yet): %s", e)
     yield
     # Shutdown logic if any
 
@@ -30,7 +35,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS Configuration for Cloudflare React Frontend & Gateway
@@ -43,7 +48,7 @@ app.add_middleware(
         "https://mak-api-gateway.anilkumarreddy3029.workers.dev",
         "https://*.workers.dev",
         "https://*.amktech.in",
-        "*"
+        "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -60,17 +65,26 @@ async def health_check():
     return {
         "service": "identity_service",
         "status": "healthy",
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
     }
 
 # Cloudflare Workers Python ASGI Handler
+try:
+    from workers import asgi
+    Default = asgi.entrypoint(app)
+except (ImportError, Exception):
+    Default = app
+
 async def on_fetch(request, env):
     try:
-        import asgi
+        from workers import asgi
         return await asgi.fetch(app, request, env)
-    except ImportError:
-        # Standard ASGI fallback
-        return app
+    except Exception:
+        try:
+            import asgi
+            return await asgi.fetch(app, request, env)
+        except Exception:
+            return app
 
 if __name__ == "__main__":
     import uvicorn

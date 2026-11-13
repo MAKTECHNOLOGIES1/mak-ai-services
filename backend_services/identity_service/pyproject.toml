@@ -1,0 +1,26 @@
+[project]
+name = "mak-identity-service"
+version = "1.0.0"
+description = "AMK Multi-Tenant Identity Service"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "email-validator>=2.1.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "greenlet>=3.0.3",
+    "asyncpg>=0.29.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt<=4.0.1",
+    "python-multipart>=0.0.9",
+    "watchfiles>=1.0.0"
+]
+
+[dependency-groups]
+dev = [
+    "workers-py",
+    "workers-runtime-sdk"
+]

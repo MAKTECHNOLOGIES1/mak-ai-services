@@ -6,21 +6,22 @@ ZERO Random UUIDs:
 - role_id is the meaningful role ID ("ROLE_STUDENT", "ROLE_FACULTY")
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text, or_
-from fastapi import HTTPException, status
 import uuid
-from core.security import hash_password, verify_password, create_access_token
+
+from fastapi import HTTPException, status
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.config import settings
-from models.user_model import User
-from models.role_model import Role
+from core.security import create_access_token, hash_password, verify_password
 from models.tenant_model import Tenant
+from models.user_model import User
 from schemas.auth_schemas import (
-    StudentRegisterRequest,
     AdminUserProvisionRequest,
-    UserLoginRequest,
+    StudentRegisterRequest,
     TokenResponse,
-    UserResponse
+    UserLoginRequest,
+    UserResponse,
 )
 from services.role_service import RoleService
 

@@ -8,21 +8,25 @@
   ],
   "vars": {
     "APP_NAME": "AMK Identity Service",
-    "DB_SCHEMA": "identity_service"
+    "DB_SCHEMA": "identity_service",
+    "ENVIRONMENT": "development"
   },
   "env": {
     "test": {
       "name": "mak-identity-service-test",
       "vars": {
+        "APP_NAME": "AMK Identity Service",
+        "DB_SCHEMA": "identity_service",
         "ENVIRONMENT": "test"
       }
     },
     "prod": {
       "name": "mak-identity-service",
       "vars": {
+        "APP_NAME": "AMK Identity Service",
+        "DB_SCHEMA": "identity_service",
         "ENVIRONMENT": "production"
       }
     }
   }
 }
-

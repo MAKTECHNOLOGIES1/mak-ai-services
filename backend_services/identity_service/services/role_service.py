@@ -4,11 +4,10 @@ Dynamic Role Service: Manages custom, meaningful role_id
 
 import re
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from models.role_model import Role
 from schemas.auth_schemas import RoleCreate
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_ROLES = [
     {

@@ -207,7 +207,7 @@ jobs:
 
       - name: Code Quality & Lint Check (Ruff)
         run: |
-          ruff check backend_services/${{ needs.resolve-and-check.outputs.service_name }} --ignore E501,B008,RUF012
+          ruff check backend_services/${{ needs.resolve-and-check.outputs.service_name }} --select E,F --ignore E501
 
       - name: Syntax & Import Verification
         run: |

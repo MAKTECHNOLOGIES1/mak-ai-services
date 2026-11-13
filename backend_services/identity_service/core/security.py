@@ -3,15 +3,14 @@ Security Utilities: Password Hashing & JWT Token Generation
 Supports both Passlib and native BCrypt for cross-version compatibility
 """
 
+from datetime import UTC, datetime, timedelta
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
+from core.config import settings
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +63,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     """Generates a signed JWT access token containing tenant, user and role claims"""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if expires_delta:
         expire = now + expires_delta
     else:

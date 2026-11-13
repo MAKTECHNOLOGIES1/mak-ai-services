@@ -64,12 +64,22 @@ async def gateway_health():
     }
 
 # 5. Cloudflare Workers Python ASGI Handler
+try:
+    from workers import asgi
+    Default = asgi.entrypoint(app)
+except (ImportError, Exception):
+    Default = app
+
 async def on_fetch(request, env):
     try:
-        import asgi
+        from workers import asgi
         return await asgi.fetch(app, request, env)
-    except ImportError:
-        return app
+    except Exception:
+        try:
+            import asgi
+            return await asgi.fetch(app, request, env)
+        except Exception:
+            return app
 
 if __name__ == "__main__":
     import uvicorn

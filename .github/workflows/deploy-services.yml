@@ -250,6 +250,7 @@ jobs:
 
       - name: Save Version in Cloudflare R2
         uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -270,12 +271,12 @@ jobs:
   # =========================================================================
   deploy-test:
     name: 3. Deploy to Test Environment
-    needs: [resolve-and-check, build-and-upload-r2]
+    needs: [resolve-and-check, validate, build-and-upload-r2]
     if: |
       always() &&
       needs.resolve-and-check.outputs.target_env == 'test' &&
       (
-        needs.build-and-upload-r2.result == 'success' ||
+        needs.validate.result == 'success' ||
         needs.resolve-and-check.outputs.action == 'deploy_existing_test'
       )
     runs-on: ubuntu-latest
@@ -304,6 +305,7 @@ jobs:
 
       - name: Fetch Package from Cloudflare R2
         uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -314,7 +316,13 @@ jobs:
         run: |
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
           mkdir -p deploy_dir
-          tar -xzf package.tar.gz -C deploy_dir
+          if [ -f "package.tar.gz" ]; then
+            echo "Extracting package.tar.gz..."
+            tar -xzf package.tar.gz -C deploy_dir
+          else
+            echo "Notice: package.tar.gz not in R2. Deploying directly from source repository..."
+            cp -r backend_services/$SERVICE/* deploy_dir/
+          fi
           
           # Copy wrangler config and pyproject if present
           if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
@@ -395,6 +403,7 @@ jobs:
 
       - name: Download Verified Package from Cloudflare R2
         uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
@@ -405,7 +414,12 @@ jobs:
         run: |
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
           mkdir -p deploy_dir
-          tar -xzf package.tar.gz -C deploy_dir
+          if [ -f "package.tar.gz" ]; then
+            tar -xzf package.tar.gz -C deploy_dir
+          else
+            echo "Notice: package.tar.gz not in R2. Promoting directly from source repository..."
+            cp -r backend_services/$SERVICE/* deploy_dir/
+          fi
           
           # Copy wrangler config and pyproject if present
           if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then

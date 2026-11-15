@@ -7,6 +7,7 @@
     "python_workers",
     "python_shared_standard_library"
   ],
+  "workers_dev": true,
   "vars": {
     "APP_NAME": "AMK Tenant Service",
     "SERVICE_NAME": "tenant_service",
@@ -16,6 +17,7 @@
   "env": {
     "test": {
       "name": "mak-tenant-service-test",
+      "workers_dev": true,
       "vars": {
         "APP_NAME": "AMK Tenant Service",
         "SERVICE_NAME": "tenant_service",
@@ -25,6 +27,7 @@
     },
     "prod": {
       "name": "mak-tenant-service",
+      "workers_dev": true,
       "vars": {
         "APP_NAME": "AMK Tenant Service",
         "SERVICE_NAME": "tenant_service",

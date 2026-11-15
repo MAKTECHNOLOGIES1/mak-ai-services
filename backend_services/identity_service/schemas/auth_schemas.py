@@ -8,7 +8,7 @@ All IDs are customized strings (ZERO random UUIDs)
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # -------------------------------------------------------------
@@ -54,7 +54,7 @@ class StudentRegisterRequest(BaseModel):
         example="22731A0501",
         description="Student Roll Number — THIS IS THE USER_ID USED ACROSS ALL SERVICES",
     )
-    email: EmailStr = Field(..., example="rahul.cse@srit.ac.in")
+    email: str = Field(..., example="rahul.cse@srit.ac.in", pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(..., min_length=8, description="Minimum 8 characters")
     full_name: str = Field(..., example="Rahul Sharma")
     department: str = Field(..., example="CSE", description="Department code")
@@ -71,7 +71,7 @@ class AdminUserProvisionRequest(BaseModel):
         example="FAC-SRIT-001",
         description="Standard Employee/Staff ID. If left blank, a standard ID will be auto-generated.",
     )
-    email: EmailStr = Field(..., example="prof.sreenivas@srit.ac.in")
+    email: str = Field(..., example="prof.sreenivas@srit.ac.in", pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     initial_password: str = Field(..., min_length=8, description="Initial password set by Admin")
     full_name: str = Field(..., example="Dr. K. Sreenivasulu")
     department: str = Field(..., example="CSE")
@@ -97,7 +97,7 @@ class UserLoginRequest(BaseModel):
 class UserResponse(BaseModel):
     user_id: str = Field(..., description="Student Roll Number or Staff ID used platform-wide")
     tenant_id: str = Field(..., description="Custom College ID (e.g. SRIT-ATP)")
-    email: EmailStr
+    email: str
     full_name: str
     department: str
     batch_year: str | None = None

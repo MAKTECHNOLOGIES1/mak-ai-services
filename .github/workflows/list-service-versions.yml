@@ -4,14 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       filter_prefix:
-        description: 'Optional filter prefix (e.g. "builds/identity_service" or leave blank for all)'
+        description: 'Optional filter prefix (e.g. "builds/tenant_service" or leave blank for all)'
         required: false
         default: ''
         type: string
 
 env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   R2_BUCKET_NAME: "mak-services-builds"
-  CLOUDFLARE_ACCOUNT_ID: "a8783999a53c63b47959dbf8b88fca11"
 
 jobs:
   catalog-versions:
@@ -22,8 +23,7 @@ jobs:
         id: fetch-r2-list
         run: |
           echo "Connecting to Cloudflare R2 for account ${{ env.CLOUDFLARE_ACCOUNT_ID }}..."
-          
-          # Query Cloudflare R2 API
+
           PREFIX="${{ github.event.inputs.filter_prefix }}"
           if [ -z "$PREFIX" ]; then
             PREFIX="builds/"
@@ -43,7 +43,6 @@ jobs:
             echo "::warning::Cloudflare API returned HTTP $HTTP_CODE"
             echo "Response: $BODY"
             echo "api_status=error" >> $GITHUB_OUTPUT
-            echo "error_msg=$(echo $BODY | jq -r '.errors[0].message // "Unknown error"')" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -60,7 +59,7 @@ jobs:
 
           if [ ! -f "r2_objects.json" ]; then
             echo "⚠️ Could not retrieve objects from Cloudflare R2." >> $GITHUB_STEP_SUMMARY
-            echo "Please ensure the bucket \`${{ env.R2_BUCKET_NAME }}\` is created in Cloudflare R2 and your \`CLOUDFLARE_API_TOKEN\` has R2 permissions." >> $GITHUB_STEP_SUMMARY
+            echo "Please ensure the bucket \`${{ env.R2_BUCKET_NAME }}\` exists in Cloudflare R2 and your API Token has R2 Read permissions." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
@@ -68,25 +67,21 @@ jobs:
 
           if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
             echo "ℹ️ **No service build artifacts found yet in bucket \`${{ env.R2_BUCKET_NAME }}\`.**" >> $GITHUB_STEP_SUMMARY
-            echo "Run the **Cloudflare Services Deployment Pipeline** workflow with a version tag (e.g. \`v1.0.0\`) to create your first stored build." >> $GITHUB_STEP_SUMMARY
+            echo "Run the **Cloudflare Services Deployment Pipeline** workflow to create your first stored build." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
           echo "Found **$COUNT** build package(s) in R2:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| # | Service | Version Tag | R2 Package Key | Size | Uploaded / Build Date (UTC) | How to Deploy |" >> $GITHUB_STEP_SUMMARY
-          echo "| :-: | :--- | :--- | :--- | :-: | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Version Tag | R2 Package Key | Size | Uploaded (UTC) |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- | :-: | :--- |" >> $GITHUB_STEP_SUMMARY
 
-          # Loop through each item in result array
           jq -r '.result[] | [.key, .size, .uploaded] | @tsv' r2_objects.json | while IFS=$'\t' read -r key size uploaded; do
             FILENAME=$(basename "$key")
-            
-            # Extract service name and version: e.g. "identity_service-v1.0.0.tar.gz"
             CLEAN_NAME=$(echo "$FILENAME" | sed -E 's/\.tar\.gz$//')
             SERVICE=$(echo "$CLEAN_NAME" | cut -d'-' -f1)
             VERSION_TAG=$(echo "$CLEAN_NAME" | cut -d'-' -f2-)
 
-            # Format human-readable size
             if [ "$size" -lt 1024 ]; then
               HUMAN_SIZE="${size} B"
             elif [ "$size" -lt 1048576 ]; then
@@ -95,11 +90,8 @@ jobs:
               HUMAN_SIZE="$((size / 1048576)) MB"
             fi
 
-            # Format date
             FORMATTED_DATE=$(echo "$uploaded" | cut -d'.' -f1 | tr 'T' ' ')
 
-            echo "| 🏷️ | \`$SERVICE\` | \`$VERSION_TAG\` | \`$key\` | $HUMAN_SIZE | $FORMATTED_DATE | Enter \`$VERSION_TAG\` in Deploy Pipeline |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`$SERVICE\` | \`$VERSION_TAG\` | \`$key\` | $HUMAN_SIZE | $FORMATTED_DATE |" >> $GITHUB_STEP_SUMMARY
           done
 
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 💡 **Tip**: To deploy any version listed above to **Production**, open the **Cloudflare Services Deployment Pipeline**, select the service, choose \`target_env: prod\`, and paste that version tag into **version_tag**!" >> $GITHUB_STEP_SUMMARY

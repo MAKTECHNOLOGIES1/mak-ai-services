@@ -10,8 +10,9 @@ on:
         type: string
 
 env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   R2_BUCKET_NAME: "mak-ui-builds"
-  CLOUDFLARE_ACCOUNT_ID: "a8783999a53c63b47959dbf8b88fca11"
 
 jobs:
   catalog-versions:
@@ -22,8 +23,7 @@ jobs:
         id: fetch-r2-list
         run: |
           echo "Connecting to Cloudflare R2 for account ${{ env.CLOUDFLARE_ACCOUNT_ID }}..."
-          
-          # Query Cloudflare R2 API
+
           PREFIX="${{ github.event.inputs.filter_prefix }}"
           if [ -z "$PREFIX" ]; then
             PREFIX="builds/"
@@ -43,7 +43,6 @@ jobs:
             echo "::warning::Cloudflare API returned HTTP $HTTP_CODE"
             echo "Response: $BODY"
             echo "api_status=error" >> $GITHUB_OUTPUT
-            echo "error_msg=$(echo $BODY | jq -r '.errors[0].message // "Unknown error"')" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -60,26 +59,24 @@ jobs:
 
           if [ ! -f "r2_objects.json" ]; then
             echo "⚠️ Could not retrieve objects from Cloudflare R2." >> $GITHUB_STEP_SUMMARY
-            echo "Please ensure the bucket \`${{ env.R2_BUCKET_NAME }}\` is created in Cloudflare R2 and your \`CLOUDFLARE_API_TOKEN\` has R2 permissions." >> $GITHUB_STEP_SUMMARY
+            echo "Please ensure the bucket \`${{ env.R2_BUCKET_NAME }}\` exists in Cloudflare R2 and your API Token has R2 Read permissions." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
           COUNT=$(jq '.result | length' r2_objects.json 2>/dev/null || echo "0")
 
           if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
-            echo "ℹ️ **No build artifacts found yet in this bucket.**" >> $GITHUB_STEP_SUMMARY
-            echo "Run the **Cloudflare Frontend UI Deployment Pipeline** workflow with a version tag (e.g. \`v1.1.0\`) to create your first stored build." >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **No build artifacts found yet in bucket \`${{ env.R2_BUCKET_NAME }}\`.**" >> $GITHUB_STEP_SUMMARY
+            echo "Run the **Cloudflare Frontend UI Deployment Pipeline** workflow to create your first stored build." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
           echo "Found **$COUNT** build package(s) in R2:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| # | Version Tag | R2 Package Key | Size | Uploaded / Build Date (UTC) | How to Deploy |" >> $GITHUB_STEP_SUMMARY
-          echo "| :-: | :--- | :--- | :-: | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version Tag | R2 Package Key | Size | Uploaded (UTC) |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :-: | :--- |" >> $GITHUB_STEP_SUMMARY
 
-          # Loop through each item in result array
           jq -r '.result[] | [.key, .size, .uploaded] | @tsv' r2_objects.json | while IFS=$'\t' read -r key size uploaded; do
-            # Extract clean version from key: e.g. "builds/mak-ui-v1.1.0.tar.gz" -> "v1.1.0"
             FILENAME=$(basename "$key")
             if [ "$FILENAME" = "latest.tar.gz" ]; then
               VERSION_TAG="latest"
@@ -87,7 +84,6 @@ jobs:
               VERSION_TAG=$(echo "$FILENAME" | sed -E 's/^mak-ui-//' | sed -E 's/\.tar\.gz$//')
             fi
 
-            # Format human-readable size
             if [ "$size" -lt 1024 ]; then
               HUMAN_SIZE="${size} B"
             elif [ "$size" -lt 1048576 ]; then
@@ -96,9 +92,8 @@ jobs:
               HUMAN_SIZE="$((size / 1048576)) MB"
             fi
 
-            # Format date
             FORMATTED_DATE=$(echo "$uploaded" | cut -d'.' -f1 | tr 'T' ' ')
 
-            echo "| # | \`$VERSION_TAG\` | \`$key\` | $HUMAN_SIZE | $FORMATTED_DATE | Trigger deploy with tag \`$VERSION_TAG\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`$VERSION_TAG\` | \`$key\` | $HUMAN_SIZE | $FORMATTED_DATE |" >> $GITHUB_STEP_SUMMARY
           done
 

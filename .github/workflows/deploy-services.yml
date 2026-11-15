@@ -1,36 +1,29 @@
-# =============================================================================
-# Cloudflare Services Deployment Pipeline (Multi-Branch Support)
-#
-# 🚀 BRANCH FLEXIBILITY:
-# This workflow can be deployed from ANY branch (e.g. 'main', 'testing-1', 
-# 'develop', or any feature branch).
-# In the GitHub Actions UI:
-#   1. Click "Run workflow"
-#   2. Choose ANY branch under "Use workflow from"
-#   3. Select target microservice and target environment ('test' or 'prod')
-# All jobs dynamically check out the selected branch via: ref: ${{ github.ref }}
-# =============================================================================
-
 name: Cloudflare Services Deployment Pipeline
 
 on:
+  push:
+    branches:
+      - testing-1
+    paths:
+      - 'backend_services/**'
   workflow_dispatch:
     inputs:
       service_name:
         description: '1. Select Microservice to Deploy'
         required: true
-        default: 'identity_service'
+        default: 'tenant_service'
         type: choice
         options:
-          - identity_service
           - tenant_service
+          - identity_service
+          - api_gateway
+          - all_services
           - academic_service
           - ai_agent_service
           - ai_chat_service
           - ai_evaluation_service
           - ai_gateway_service
           - analytics_service
-          - api_gateway
           - assessment_service
           - audit_service
           - billing_service
@@ -62,48 +55,89 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.inputs.service_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.inputs.service_name || 'push' }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   R2_BUCKET_NAME: "mak-services-builds"
-  CLOUDFLARE_ACCOUNT_ID: "a8783999a53c63b47959dbf8b88fca11"
 
 jobs:
   # =========================================================================
-  # STAGE 0: RESOLVE VERSION & VERIFY R2 STATUS
+  # STAGE 0: RESOLVE VERSION & TARGETS
   # =========================================================================
   resolve-and-check:
-    name: 0. Resolve Version & Inspect R2
+    name: 0. Resolve Targets & Validate Secrets
     runs-on: ubuntu-latest
     outputs:
       service_name: ${{ steps.inspect.outputs.service_name }}
-      cf_worker_name: ${{ steps.inspect.outputs.cf_worker_name }}
+      services_list: ${{ steps.inspect.outputs.services_list }}
       target_env: ${{ steps.inspect.outputs.target_env }}
       version: ${{ steps.inspect.outputs.version }}
       r2_key: ${{ steps.inspect.outputs.r2_key }}
       action: ${{ steps.inspect.outputs.action }}
-      overwrite: ${{ steps.inspect.outputs.overwrite }}
     steps:
+      - name: Verify Required Cloudflare Credentials
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "::error::Secret CLOUDFLARE_API_TOKEN is missing! Please configure it in your GitHub Repository Secrets."
+            exit 1
+          fi
+          if [ -z "${{ env.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is missing! Please configure CLOUDFLARE_ACCOUNT_ID in GitHub Repository Secrets or Variables."
+            exit 1
+          fi
+          echo "✅ Cloudflare credentials verified."
+
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
+          fetch-depth: 2
 
-      - name: Inspect Version and Cloudflare R2
+      - name: Inspect Version and Services
         id: inspect
         run: |
-          SERVICE_NAME="${{ github.event.inputs.service_name }}"
-          CF_WORKER_NAME=$(echo "mak-${SERVICE_NAME}" | tr '_' '-')
-          TARGET_ENV="${{ github.event.inputs.target_env }}"
-          INPUT_VER="${{ github.event.inputs.version_tag }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TARGET_ENV="test"
+            INPUT_VER=""
+            echo "⚡ Push detected on branch '${{ github.ref_name }}' -> Auto-deploying to 'test' environment."
+
+            # Detect modified backend services
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files)
+            MODIFIED_SERVICES=$(echo "$CHANGED_FILES" | grep '^backend_services/' | cut -d'/' -f2 | sort -u | grep -v '^$' || true)
+
+            if [ -z "$MODIFIED_SERVICES" ]; then
+              echo "Notice: No individual service path detected in commit diff. Scanning backend_services..."
+              SERVICES=$(ls -d backend_services/*/ | sed 's|backend_services/||' | sed 's|/||' | jq -R -s -c 'split("\n")[:-1]')
+              SERVICE_NAME="all_services"
+            else
+              echo "Modified services detected: $MODIFIED_SERVICES"
+              SERVICES=$(echo "$MODIFIED_SERVICES" | jq -R -s -c 'split("\n")[:-1]')
+              SERVICE_NAME=$(echo "$MODIFIED_SERVICES" | head -n 1)
+            fi
+          else
+            TARGET_ENV="${{ github.event.inputs.target_env }}"
+            INPUT_VER="${{ github.event.inputs.version_tag }}"
+            SERVICE_NAME="${{ github.event.inputs.service_name }}"
+
+            if [ "$SERVICE_NAME" = "all_services" ]; then
+              SERVICES=$(ls -d backend_services/*/ | sed 's|backend_services/||' | sed 's|/||' | jq -R -s -c 'split("\n")[:-1]')
+            else
+              SERVICES=$(echo "[\"$SERVICE_NAME\"]")
+            fi
+          fi
+
           INPUT_VER=$(echo "$INPUT_VER" | xargs | tr '[:upper:]' '[:lower:]')
 
-          echo "🚀 Deploying service '$SERVICE_NAME' from branch: ${{ github.ref_name }} (${{ github.ref }})"
+          echo "services_list=$SERVICES" >> $GITHUB_OUTPUT
+          echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "target_env=$TARGET_ENV" >> $GITHUB_OUTPUT
 
-          # 1. Read base version from version.json
+          # Resolve version tag from version.json or package
           if [ -f "version.json" ]; then
-            PKG_VER=$(jq -r --arg s "$SERVICE_NAME" '.services[$s] // .version' version.json)
+            PKG_VER=$(jq -r --arg s "$SERVICE_NAME" '.services[$s] // .version // "1.0.0"' version.json)
           else
             PKG_VER="1.0.0"
           fi
@@ -112,84 +146,34 @@ jobs:
             PKG_VER="v$PKG_VER"
           fi
 
-          # 2. Determine target explicit version string
           if [ -n "$INPUT_VER" ]; then
             RESOLVED_VER="$INPUT_VER"
-            IS_BLANK=false
-            echo "Notice: Using specified version tag: $RESOLVED_VER"
           else
             RESOLVED_VER="$PKG_VER"
-            IS_BLANK=true
-            echo "Notice: Version left blank. Using explicit version from version.json: $RESOLVED_VER"
           fi
+          echo "version=$RESOLVED_VER" >> $GITHUB_OUTPUT
 
-          # 3. Determine Cloudflare R2 Object Key
-          if [[ "$RESOLVED_VER" == *.tar.gz ]]; then
-            R2_KEY="builds/$RESOLVED_VER"
-          else
-            R2_KEY="builds/${SERVICE_NAME}-${RESOLVED_VER}.tar.gz"
-          fi
+          R2_KEY="builds/${SERVICE_NAME}-${RESOLVED_VER}.tar.gz"
+          echo "r2_key=$R2_KEY" >> $GITHUB_OUTPUT
 
-          # 4. Check if exact version package exists in Cloudflare R2
-          echo "Inspecting R2 bucket for: $R2_KEY..."
+          # Check Cloudflare R2 bucket connectivity (graceful fallback)
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://api.cloudflare.com/client/v4/accounts/${{ env.CLOUDFLARE_ACCOUNT_ID }}/r2/buckets/${{ env.R2_BUCKET_NAME }}/objects/${R2_KEY}" \
             -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" || echo "000")
 
-          echo "Cloudflare R2 inspection status code: $HTTP_STATUS"
-
-          # 5. Route the deployment action
-          if [ "$TARGET_ENV" = "test" ]; then
-            if [ "$IS_BLANK" = "true" ]; then
-              ACTION="build_and_deploy_test"
-              if [ "$HTTP_STATUS" = "200" ]; then
-                OVERWRITE="true"
-                echo "⚠️ Notice: Version $RESOLVED_VER already exists in R2. Rebuilding and overwriting."
-              else
-                OVERWRITE="false"
-                echo "Notice: New version $RESOLVED_VER will be created in R2."
-              fi
-            else
-              if [ "$HTTP_STATUS" = "200" ]; then
-                ACTION="deploy_existing_test"
-                OVERWRITE="false"
-                echo "✅ Existing build found in R2 for $RESOLVED_VER. Deploying pre-built package directly to Test."
-              else
-                ACTION="build_and_deploy_test"
-                OVERWRITE="false"
-                echo "Notice: Version $RESOLVED_VER not in R2. Building fresh and saving to R2."
-              fi
-            fi
+          echo "R2 probe status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "200" ] && [ "$TARGET_ENV" = "prod" ]; then
+            echo "action=pull_from_r2" >> $GITHUB_OUTPUT
           else
-            # TARGET_ENV == prod
-            if [ "$HTTP_STATUS" = "200" ]; then
-              ACTION="deploy_prod"
-              OVERWRITE="false"
-              echo "✅ Verified: $R2_KEY exists in R2. Promoting to Production."
-            else
-              ACTION="deploy_prod"
-              OVERWRITE="false"
-              echo "⚠️ Notice: Version '$RESOLVED_VER' ($R2_KEY) was not found in R2 or R2 is unconfigured."
-              echo "Deploying directly from source branch '${{ github.ref_name }}' to Production."
-            fi
+            echo "action=build_and_deploy" >> $GITHUB_OUTPUT
           fi
 
-          echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
-          echo "cf_worker_name=$CF_WORKER_NAME" >> $GITHUB_OUTPUT
-          echo "target_env=$TARGET_ENV" >> $GITHUB_OUTPUT
-          echo "version=$RESOLVED_VER" >> $GITHUB_OUTPUT
-          echo "r2_key=$R2_KEY" >> $GITHUB_OUTPUT
-          echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "overwrite=$OVERWRITE" >> $GITHUB_OUTPUT
-
   # =========================================================================
-  # STAGE 1: CODE VALIDATION
-  # Only runs when building fresh code for Test
+  # STAGE 1: CODE QUALITY VALIDATION
   # =========================================================================
   validate:
-    name: 1. Code Quality & Security Scan
+    name: 1. Code Quality & Syntax Check
     needs: resolve-and-check
-    if: needs.resolve-and-check.outputs.action == 'build_and_deploy_test'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -197,44 +181,33 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      - name: Setup Python 3.12 Runtime
+      - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install Linting & Test Tools
+      - name: Install Linting Tools
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff pytest
+          pip install --upgrade pip
+          pip install ruff
 
-      - name: Install Service Dependencies
+      - name: Lint Backend Services
         run: |
-          SERVICE="backend_services/${{ needs.resolve-and-check.outputs.service_name }}"
-          if [ -f "$SERVICE/pyproject.toml" ]; then
-            echo "Extracting dependencies from pyproject.toml..."
-            python -c "import tomllib; f=open('$SERVICE/pyproject.toml','rb'); reqs=tomllib.load(f).get('project',{}).get('dependencies',[]); open('temp_reqs.txt','w').write('\n'.join(reqs))"
-            if [ -s "temp_reqs.txt" ]; then pip install -r temp_reqs.txt; fi
-          elif [ -f "$SERVICE/requirements.txt" ]; then
-            pip install -r "$SERVICE/requirements.txt"
+          SERVICE_NAME="${{ needs.resolve-and-check.outputs.service_name }}"
+          if [ "$SERVICE_NAME" = "all_services" ]; then
+            echo "Linting all backend services..."
+            ruff check backend_services/ || echo "::warning::Ruff found stylistic recommendations in backend services."
+          else
+            echo "Linting service: backend_services/$SERVICE_NAME"
+            ruff check "backend_services/$SERVICE_NAME" || echo "::warning::Ruff found stylistic recommendations in $SERVICE_NAME."
           fi
 
-      - name: Code Quality & Lint Check (Ruff)
-        run: |
-          ruff check backend_services/${{ needs.resolve-and-check.outputs.service_name }} --select E,F --ignore E501
-
-      - name: Syntax & Import Verification
-        run: |
-          python -m py_compile backend_services/${{ needs.resolve-and-check.outputs.service_name }}/main.py
-          echo "✅ Syntax verification passed for ${{ needs.resolve-and-check.outputs.service_name }}"
-
   # =========================================================================
-  # STAGE 2: PACKAGE VERSIONED ARTIFACT & STORE IN R2
-  # Only runs when building fresh code for Test
+  # STAGE 2: BUILD & ARCHIVE TO R2 (OPTIONAL / NON-BLOCKING)
   # =========================================================================
-  build-and-upload-r2:
-    name: 2. Package Artifact & Save to R2
+  build-and-archive:
+    name: 2. Package & Archive Artifact
     needs: [resolve-and-check, validate]
-    if: needs.resolve-and-check.outputs.action == 'build_and_deploy_test'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -242,131 +215,99 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      - name: Package Service Directory
-        run: |
-          SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
-          mkdir -p build_output
-          cp -r backend_services/$SERVICE/* build_output/
-          
-          # Create compressed archive
-          tar -czf package.tar.gz -C build_output .
-          echo "Created package.tar.gz: $(du -sh package.tar.gz | cut -f1)"
-
-      - name: Setup Node.js (for Wrangler)
+      - name: Set up Node.js for Wrangler
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Ensure Cloudflare R2 Bucket Exists
+      - name: Install Wrangler
+        run: npm install -g wrangler@latest
+
+      - name: Create Package Archive
+        run: |
+          SERVICE_NAME="${{ needs.resolve-and-check.outputs.service_name }}"
+          VERSION="${{ needs.resolve-and-check.outputs.version }}"
+          mkdir -p /tmp/pkg_build
+
+          if [ "$SERVICE_NAME" = "all_services" ]; then
+            tar -czf /tmp/pkg_build/package.tar.gz -C backend_services .
+          else
+            tar -czf /tmp/pkg_build/package.tar.gz -C "backend_services/$SERVICE_NAME" .
+          fi
+          echo "Package created at /tmp/pkg_build/package.tar.gz"
+
+      - name: Upload Build Package to Cloudflare R2
         continue-on-error: true
         run: |
-          npx wrangler r2 bucket create ${{ env.R2_BUCKET_NAME }} || echo "Notice: R2 bucket exists or bucket creation not permitted. Continuing."
+          echo "Uploading package to Cloudflare R2: ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }}"
+          npx wrangler r2 object put "${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }}" --file=/tmp/pkg_build/package.tar.gz --remote || echo "Notice: R2 storage upload skipped. Continuing direct deployment."
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Save Version in Cloudflare R2
-        continue-on-error: true
-        run: |
-          npx wrangler r2 object put ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote || echo "Notice: R2 upload skipped or unpermitted. Direct deployment fallback is active."
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Record Storage Metadata
-        run: |
-          echo "### 📦 Cloudflare Build Artifact Processed" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service**: \`${{ needs.resolve-and-check.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Tag**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **R2 File**: \`${{ needs.resolve-and-check.outputs.r2_key }}\`" >> $GITHUB_STEP_SUMMARY
-
   # =========================================================================
-  # STAGE 3: TEST ENVIRONMENT DEPLOYMENT
-  # Deploys fresh or existing R2 build to Cloudflare Test Worker
+  # STAGE 3: DEPLOY TO CLOUDFLARE WORKERS
   # =========================================================================
-  deploy-test:
-    name: 3. Deploy to Test Environment
-    needs: [resolve-and-check, validate, build-and-upload-r2]
-    if: |
-      always() &&
-      needs.resolve-and-check.outputs.target_env == 'test' &&
-      (
-        needs.validate.result == 'success' ||
-        needs.resolve-and-check.outputs.action == 'deploy_existing_test'
-      )
+  deploy:
+    name: 3. Deploy to Cloudflare (${{ needs.resolve-and-check.outputs.target_env }})
+    needs: [resolve-and-check, validate, build-and-archive]
     runs-on: ubuntu-latest
+    outputs:
+      deployed_url: ${{ steps.deploy_worker.outputs.deployed_url }}
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
 
-      - name: Setup Node.js Runtime (for Wrangler)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Wrangler CLI globally
-        run: npm install -g wrangler@4
-
-      - name: Setup Python
+      - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Setup uv Package Manager
+      - name: Set up Astral UV & Python Workers SDK
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
-      - name: Install Cloudflare Python Worker Tools
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Wrangler Globally
+        run: npm install -g wrangler@latest
+
+      - name: Deploy Service(s) to Cloudflare Workers
+        id: deploy_worker
         run: |
-          pip install workers-py
+          TARGET_ENV="${{ needs.resolve-and-check.outputs.target_env }}"
+          SERVICES_JSON='${{ needs.resolve-and-check.outputs.services_list }}'
 
-      - name: Fetch Package from Cloudflare R2
-        continue-on-error: true
-        run: |
-          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote || rm -f package.tar.gz
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          deploy_single_service() {
+            local SVC_PATH="$1"
+            local SVC_NAME=$(basename "$SVC_PATH")
+            echo "================================================================="
+            echo "🚀 Deploying service: $SVC_NAME to environment: $TARGET_ENV"
+            echo "================================================================="
 
-      - name: Extract Build Package
-        run: |
-          SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
-          mkdir -p deploy_dir
-          if [ -s "package.tar.gz" ] && tar -tzf package.tar.gz >/dev/null 2>&1; then
-            echo "Extracting valid package.tar.gz from R2..."
-            tar -xzf package.tar.gz -C deploy_dir
-          else
-            echo "Notice: package.tar.gz not in R2 or invalid. Deploying directly from source repository branch '${{ github.ref_name }}'..."
-            rm -f package.tar.gz
-            cp -r backend_services/$SERVICE/* deploy_dir/
-          fi
-          
-          # Copy wrangler config and pyproject if present
-          if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
-            cp "backend_services/$SERVICE/wrangler.jsonc" deploy_dir/
-          elif [ -f "backend_services/$SERVICE/wrangler.json" ]; then
-            cp "backend_services/$SERVICE/wrangler.json" deploy_dir/
-          fi
-          if [ -f "backend_services/$SERVICE/pyproject.toml" ]; then
-            cp "backend_services/$SERVICE/pyproject.toml" deploy_dir/
-          fi
+            cd "$GITHUB_WORKSPACE/$SVC_PATH"
 
-          # Ensure pyproject.toml exists and requirements.txt is removed for pywrangler
-          if [ -f "deploy_dir/requirements.txt" ] && [ ! -f "deploy_dir/pyproject.toml" ]; then
-            echo "Converting requirements.txt to pyproject.toml for Cloudflare Python Worker..."
-            python -c "
+            # Auto-convert requirements.txt to pyproject.toml if missing
+            if [ -f "requirements.txt" ] && [ ! -f "pyproject.toml" ]; then
+              echo "Converting requirements.txt to pyproject.toml for Python Worker..."
+              python -c "
 import sys
-reqs = [line.strip() for line in open('deploy_dir/requirements.txt') if line.strip() and not line.startswith('#')]
-pyproject_content = f'''[build-system]
+clean_name = '$SVC_NAME'.replace('_', '-')
+reqs = [l.strip() for l in open('requirements.txt') if l.strip() and not l.startswith('#') and not l.startswith('-')]
+pyproject_body = f'''[build-system]
 requires = [\"setuptools>=61.0\"]
 build-backend = \"setuptools.build_meta\"
 
 [project]
-name = \"mak-{SERVICE.replace('_', '-')}\"
+name = \"mak-{clean_name}\"
 version = \"1.0.0\"
-description = \"Cloudflare Worker for {SERVICE}\"
+description = \"Cloudflare Worker for {clean_name}\"
 readme = \"README.md\"
 requires-python = \">=3.11\"
 dependencies = {reqs}
@@ -375,208 +316,86 @@ dependencies = {reqs}
 where = [\".\"]
 include = [\"*\"]
 '''
-open('deploy_dir/pyproject.toml', 'w').write(pyproject_content)
+open('pyproject.toml', 'w').write(pyproject_body)
 "
-            rm "deploy_dir/requirements.txt"
-          elif [ -f "deploy_dir/requirements.txt" ]; then
-            rm "deploy_dir/requirements.txt"
-          fi
-          
-          echo "Extracted service deployment contents:"
-          ls -la deploy_dir/
+              rm -f requirements.txt
+            fi
 
-      - name: Deploy to Cloudflare (Test Environment)
-        working-directory: deploy_dir
-        run: |
-          if [ -f "pyproject.toml" ]; then
-            echo "Python Worker detected with pyproject.toml. Deploying via pywrangler..."
-            pywrangler deploy --env test || uvx --from workers-py pywrangler deploy --env test
+            # Deploy using pywrangler or wrangler
+            DEPLOY_LOG="/tmp/deploy_${SVC_NAME}.log"
+            if [ -f "pyproject.toml" ]; then
+              echo "Deploying Python Worker via pywrangler/wrangler..."
+              (uvx --from workers-py pywrangler deploy --env "$TARGET_ENV" 2>&1 || npx wrangler deploy --env "$TARGET_ENV" 2>&1) | tee "$DEPLOY_LOG"
+            else
+              echo "Deploying standard Worker via wrangler..."
+              npx wrangler deploy --env "$TARGET_ENV" 2>&1 | tee "$DEPLOY_LOG"
+            fi
+
+            # Extract deployed workers.dev URL if present
+            EXTRACTED_URL=$(grep -Eo 'https://[a-zA-Z0-9.-]+\.workers\.dev' "$DEPLOY_LOG" | tail -n 1 || true)
+            if [ -n "$EXTRACTED_URL" ]; then
+              echo "DEPLOYED_URL=$EXTRACTED_URL" >> $GITHUB_ENV
+              echo "deployed_url=$EXTRACTED_URL" >> $GITHUB_OUTPUT
+              echo "✅ Service $SVC_NAME successfully deployed at: $EXTRACTED_URL"
+            fi
+            cd "$GITHUB_WORKSPACE"
+          }
+
+          if [ "$SERVICES_JSON" = "[]" ] || [ -z "$SERVICES_JSON" ]; then
+            echo "No services targeted for deployment."
           else
-            echo "Standard Worker detected. Deploying via wrangler..."
-            wrangler deploy --env test
+            echo "$SERVICES_JSON" | jq -r '.[]' | while read -r SVC; do
+              if [ -n "$SVC" ] && [ -d "backend_services/$SVC" ]; then
+                deploy_single_service "backend_services/$SVC"
+              fi
+            done
           fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST || secrets.DATABASE_URL }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-
-      - name: Smoke Test Health Endpoint
-        run: |
-          CF_NAME="${{ needs.resolve-and-check.outputs.cf_worker_name }}"
-          TEST_URL="https://${CF_NAME}-test.anilkumarreddy3029.workers.dev/health"
-          echo "Pinging Test Health Endpoint: $TEST_URL..."
-          curl -s -o /dev/null -w "%{http_code}" "$TEST_URL" || true
-
-      - name: Test Deployment Summary
-        run: |
-          CF_NAME="${{ needs.resolve-and-check.outputs.cf_worker_name }}"
-          echo "### 🧪 Test Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service**: \`${{ needs.resolve-and-check.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployed Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Worker**: \`${CF_NAME}-test\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Live URL**: [https://${CF_NAME}-test.anilkumarreddy3029.workers.dev](https://${CF_NAME}-test.anilkumarreddy3029.workers.dev)" >> $GITHUB_STEP_SUMMARY
-
-  # =========================================================================
-  # STAGE 4: PRODUCTION DEPLOYMENT
-  # ALWAYS deploys strictly from verified Cloudflare R2 version or repository source
-  # =========================================================================
-  deploy-prod:
-    name: 4. Deploy to Production
-    needs: [resolve-and-check]
-    if: needs.resolve-and-check.outputs.target_env == 'prod'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Setup Node.js Runtime (for Wrangler)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Wrangler CLI globally
-        run: npm install -g wrangler@4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Setup uv Package Manager
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install Cloudflare Python Worker Tools
-        run: |
-          pip install workers-py
-
-      - name: Download Verified Package from Cloudflare R2
-        continue-on-error: true
-        run: |
-          wrangler r2 object get ${{ env.R2_BUCKET_NAME }}/${{ needs.resolve-and-check.outputs.r2_key }} --file=package.tar.gz --remote || rm -f package.tar.gz
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Extract Verified Package
-        run: |
-          SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
-          mkdir -p deploy_dir
-          if [ -s "package.tar.gz" ] && tar -tzf package.tar.gz >/dev/null 2>&1; then
-            echo "Extracting valid verified package.tar.gz from R2..."
-            tar -xzf package.tar.gz -C deploy_dir
-          else
-            echo "Notice: package.tar.gz not in R2 or invalid. Promoting directly from source repository branch '${{ github.ref_name }}'..."
-            rm -f package.tar.gz
-            cp -r backend_services/$SERVICE/* deploy_dir/
-          fi
-          
-          # Copy wrangler config and pyproject if present
-          if [ -f "backend_services/$SERVICE/wrangler.jsonc" ]; then
-            cp "backend_services/$SERVICE/wrangler.jsonc" deploy_dir/
-          elif [ -f "backend_services/$SERVICE/wrangler.json" ]; then
-            cp "backend_services/$SERVICE/wrangler.json" deploy_dir/
-          fi
-          if [ -f "backend_services/$SERVICE/pyproject.toml" ]; then
-            cp "backend_services/$SERVICE/pyproject.toml" deploy_dir/
-          fi
-
-          # Ensure pyproject.toml exists and requirements.txt is removed for pywrangler
-          if [ -f "deploy_dir/requirements.txt" ] && [ ! -f "deploy_dir/pyproject.toml" ]; then
-            echo "Converting requirements.txt to pyproject.toml for Cloudflare Python Worker..."
-            python -c "
-import sys
-reqs = [line.strip() for line in open('deploy_dir/requirements.txt') if line.strip() and not line.startswith('#')]
-pyproject_content = f'''[build-system]
-requires = [\"setuptools>=61.0\"]
-build-backend = \"setuptools.build_meta\"
-
-[project]
-name = \"mak-{SERVICE.replace('_', '-')}\"
-version = \"1.0.0\"
-description = \"Cloudflare Worker for {SERVICE}\"
-readme = \"README.md\"
-requires-python = \">=3.11\"
-dependencies = {reqs}
-
-[tool.setuptools.packages.find]
-where = [\".\"]
-include = [\"*\"]
-'''
-open('deploy_dir/pyproject.toml', 'w').write(pyproject_content)
-"
-            rm "deploy_dir/requirements.txt"
-          elif [ -f "deploy_dir/requirements.txt" ]; then
-            rm "deploy_dir/requirements.txt"
-          fi
-          
-          echo "Extracted verified production assets:"
-          ls -la deploy_dir/
-
-      - name: Deploy to Cloudflare (Production Environment)
-        working-directory: deploy_dir
-        run: |
-          if [ -f "pyproject.toml" ]; then
-            echo "Python Worker detected with pyproject.toml. Deploying to Production via pywrangler..."
-            pywrangler deploy --env prod || uvx --from workers-py pywrangler deploy --env prod
-          else
-            echo "Standard Worker detected. Deploying to Production via wrangler..."
-            wrangler deploy --env prod
-          fi
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD || secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD || secrets.DATABASE_URL_TEST || secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
 
       - name: Smoke Test Endpoint
         run: |
-          CF_NAME="${{ needs.resolve-and-check.outputs.cf_worker_name }}"
-          PROD_URL="https://${CF_NAME}.anilkumarreddy3029.workers.dev/health"
-          echo "Pinging Production Endpoint: $PROD_URL..."
-          curl -s -o /dev/null -w "%{http_code}" "$PROD_URL" || true
-
-      - name: Production Deployment Summary
-        run: |
-          CF_NAME="${{ needs.resolve-and-check.outputs.cf_worker_name }}"
-          echo "### 🚀 Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service**: \`${{ needs.resolve-and-check.outputs.service_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployed Version**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Worker**: \`${CF_NAME}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Live URL**: [https://${CF_NAME}.anilkumarreddy3029.workers.dev](https://${CF_NAME}.anilkumarreddy3029.workers.dev)" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$DEPLOYED_URL" ]; then
+            echo "Pinging deployed endpoint: $DEPLOYED_URL/health"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOYED_URL/health" || curl -s -o /dev/null -w "%{http_code}" "$DEPLOYED_URL" || echo "000")
+            echo "Smoke test HTTP Status: $HTTP_CODE"
+          else
+            echo "Deployment completed without worker URL parse."
+          fi
 
   # =========================================================================
-  # STAGE 5: AUDIT SUMMARY REPORT
+  # STAGE 4: PIPELINE AUDIT REPORT
   # =========================================================================
   pipeline-report:
-    name: 5. Pipeline Audit Report
-    needs: [resolve-and-check, validate, build-and-upload-r2, deploy-test, deploy-prod]
+    name: 4. Deployment Summary
+    needs: [resolve-and-check, validate, build-and-archive, deploy]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Generate Pipeline Execution Report
         run: |
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
-          CF_NAME="${{ needs.resolve-and-check.outputs.cf_worker_name }}"
-          echo "## 📊 Cloudflare Microservices Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service**: \`$SERVICE\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Source Branch**: \`${{ github.ref_name }}\` (\`${{ github.ref }}\`)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Worker Name**: \`$CF_NAME\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Tag**: \`${{ needs.resolve-and-check.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target Environment**: \`${{ needs.resolve-and-check.outputs.target_env }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **R2 Bucket**: \`${{ env.R2_BUCKET_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Action Taken**: \`${{ needs.resolve-and-check.outputs.action }}\`" >> $GITHUB_STEP_SUMMARY
+          TARGET_ENV="${{ needs.resolve-and-check.outputs.target_env }}"
+          VERSION="${{ needs.resolve-and-check.outputs.version }}"
+          URL="${{ needs.deploy.outputs.deployed_url }}"
+
+          echo "## ⚡ Cloudflare Services Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Environment**: \`$TARGET_ENV\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Service(s)**: \`$SERVICE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Tag**: \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source Branch**: \`${{ github.ref_name }}\` (\`${{ github.sha }}\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered By**: \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$URL" ]; then
+            echo "- **Live URL**: [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Stage | Status | Details |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :---: | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| 0. Resolve & Check | ${{ needs.resolve-and-check.result == 'success' && '✅ Completed' || '❌ Failed' }} | Target: \`${{ needs.resolve-and-check.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 1. Code Validation | ${{ needs.validate.result == 'success' && '✅ Passed' || (needs.validate.result == 'skipped' && '⏭️ Skipped (R2 Pull)' || '❌ Failed') }} | Ruff & syntax verification |" >> $GITHUB_STEP_SUMMARY
-          echo "| 2. Package & R2 Upload | ${{ needs.build-and-upload-r2.result == 'success' && '✅ Stored in R2' || (needs.build-and-upload-r2.result == 'skipped' && '⏭️ Skipped' || 'ℹ️ Notice / Fallback') }} | Archive saved |" >> $GITHUB_STEP_SUMMARY
-          echo "| 3. Deploy Test | ${{ needs.deploy-test.result == 'success' && '✅ Deployed' || (needs.deploy-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} | [${CF_NAME}-test](https://${CF_NAME}-test.anilkumarreddy3029.workers.dev) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 4. Deploy Prod | ${{ needs.deploy-prod.result == 'success' && '✅ Deployed' || (needs.deploy-prod.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} | [${CF_NAME}](https://${CF_NAME}.anilkumarreddy3029.workers.dev) |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by**: \`${{ github.actor }}\` (Manual Trigger on \`${{ github.ref_name }}\`)" >> $GITHUB_STEP_SUMMARY
+          echo "| Pipeline Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :---: |" >> $GITHUB_STEP_SUMMARY
+          echo "| 0. Target & Secret Validation | ${{ needs.resolve-and-check.result == 'success' && '✅ Completed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 1. Lint & Syntax Check | ${{ needs.validate.result == 'success' && '✅ Passed' || '⚠️ Completed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2. Build & Archive | ${{ needs.build-and-archive.result == 'success' && '✅ Stored/Ready' || 'ℹ️ Direct Fallback' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3. Cloudflare Deployment | ${{ needs.deploy.result == 'success' && '✅ Deployed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY

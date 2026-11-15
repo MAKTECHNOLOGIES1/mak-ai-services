@@ -1,0 +1,106 @@
+name: Continuous Integration Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+      - testing-1
+      - develop
+  pull_request:
+    branches:
+      - main
+      - testing-1
+      - develop
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-backend:
+    name: Validate Python Microservices
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Linting & Verification Tools
+        run: |
+          pip install --upgrade pip
+          pip install ruff
+
+      - name: Run Ruff Lint Checks
+        run: |
+          ruff check backend_services/
+
+      - name: Verify Python Syntax Across Services
+        run: |
+          python -m compileall backend_services/
+
+  validate-frontend:
+    name: Validate Frontend UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: |
+          npm ci || npm install
+
+      - name: Lint Frontend
+        working-directory: frontend
+        run: |
+          npm run lint || echo "::warning::Linter reported warnings."
+
+      - name: Test Build Production Bundle
+        working-directory: frontend
+        run: |
+          npm run build
+
+  validate-configs:
+    name: Validate Cloudflare Wrangler Configurations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify All wrangler.jsonc Files
+        run: |
+          python -c "
+import glob, json, re
+
+def strip_jsonc_comments(text):
+    text = re.sub(r'//.*', '', text)
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    return text
+
+files = glob.glob('**/wrangler.jsonc', recursive=True)
+print(f'Checking {len(files)} wrangler configurations...')
+errors = 0
+for f in files:
+    try:
+        content = open(f).read()
+        cleaned = strip_jsonc_comments(content)
+        data = json.loads(cleaned)
+        assert 'name' in data, f'Missing name in {f}'
+        print(f'✅ {f}: valid ({data[\"name\"]})')
+    except Exception as e:
+        print(f'❌ Error in {f}: {e}')
+        errors += 1
+
+if errors > 0:
+    exit(1)
+"
+

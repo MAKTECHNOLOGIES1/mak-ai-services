@@ -1,13 +1,17 @@
 """
-Dynamic Role Service: Manages custom, meaningful role_id
+Dynamic Role Service for Identity Service
+Manages custom, meaningful role_id values via Supabase PostgREST
 """
 
+import logging
 import re
+from typing import Any, Optional
 
-from models.role_model import Role
-from schemas.auth_schemas import RoleCreate
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from core.database import SupabaseClient
+from models.role_model import role_from_row
+from schemas.auth_schemas import RoleCreate, RoleResponse
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ROLES = [
     {
@@ -95,54 +99,74 @@ DEFAULT_ROLES = [
 
 class RoleService:
     @staticmethod
-    async def seed_default_roles_if_missing(db: AsyncSession):
-        """Seeds standard roles on startup if table is empty"""
+    async def seed_default_roles_if_missing(db: SupabaseClient):
+        """Seeds standard roles on startup if table is empty or missing defaults"""
         for r in DEFAULT_ROLES:
-            existing = await db.execute(select(Role).where(Role.role_id == r["role_id"]))
-            if not existing.scalar_one_or_none():
-                db.add(Role(**r))
-        await db.commit()
+            existing = await db.select("roles", filters={"role_id": f"eq.{r['role_id']}"}, single=True)
+            if not existing:
+                try:
+                    await db.insert("roles", {
+                        "role_id": r["role_id"],
+                        "name": r["name"],
+                        "description": r["description"],
+                        "hierarchy_level": r["hierarchy_level"],
+                        "is_self_registerable": r["is_self_registerable"],
+                        "is_active": True,
+                        "permissions": r["permissions"],
+                    })
+                    logger.info("Seeded default role: %s", r["role_id"])
+                except Exception as e:
+                    logger.warning("Could not seed role %s: %s", r["role_id"], e)
 
     @staticmethod
-    async def get_role_by_id(db: AsyncSession, role_id: str) -> Role | None:
-        """Fetch role by its meaningful role_id (e.g. 'ROLE_STUDENT')"""
-        clean_id = role_id.strip().upper()
-        result = await db.execute(select(Role).where(Role.role_id == clean_id))
-        return result.scalar_one_or_none()
+    async def get_role_by_id(db: SupabaseClient, role_id: str) -> Optional[dict[str, Any]]:
+        clean_role_id = role_id.strip().upper()
+        if not clean_role_id.startswith("ROLE_"):
+            clean_role_id = f"ROLE_{clean_role_id}"
+
+        row = await db.select("roles", filters={"role_id": f"eq.{clean_role_id}"}, single=True)
+        if not row:
+            # Check without ROLE_ prefix as fallback
+            alt_id = clean_role_id.replace("ROLE_", "", 1)
+            row = await db.select("roles", filters={"role_id": f"eq.{alt_id}"}, single=True)
+        return role_from_row(row) if row else None
 
     @staticmethod
-    async def get_all_roles(db: AsyncSession) -> list[Role]:
-        result = await db.execute(select(Role).where(Role.is_active.is_(True)).order_by(Role.hierarchy_level.desc()))
-        return list(result.scalars().all())
+    async def get_all_roles(db: SupabaseClient) -> list[RoleResponse]:
+        rows = await db.select("roles", order="hierarchy_level.desc")
+        results: list[RoleResponse] = []
+        for r in (rows or []):
+            role_dict = role_from_row(r)
+            results.append(RoleResponse(**role_dict))
+        return results
 
     @staticmethod
-    async def create_dynamic_role(db: AsyncSession, role_in: RoleCreate) -> Role:
-        """
-        Allows administrators to create custom roles with custom or auto-generated role_id.
-        Example: name="Dean Academics" -> role_id="ROLE_DEAN_ACADEMICS"
-        """
-        if role_in.role_id and role_in.role_id.strip():
-            clean_role_id = role_in.role_id.strip().upper()
+    async def create_dynamic_role(db: SupabaseClient, payload: RoleCreate) -> RoleResponse:
+        if payload.role_id:
+            clean_role_id = payload.role_id.strip().upper()
             if not clean_role_id.startswith("ROLE_"):
                 clean_role_id = f"ROLE_{clean_role_id}"
         else:
-            # Auto-generate from name: "Dean of Academics" -> "ROLE_DEAN_OF_ACADEMICS"
-            slug = re.sub(r"[^A-Za-z0-9]+", "_", role_in.name).strip("_").upper()
+            slug = re.sub(r"[^A-Za-z0-9]+", "_", payload.name.strip().upper()).strip("_")
             clean_role_id = f"ROLE_{slug}"
 
-        existing = await RoleService.get_role_by_id(db, clean_role_id)
+        existing = await db.select("roles", filters={"role_id": f"eq.{clean_role_id}"}, single=True)
         if existing:
-            raise ValueError(f"Role ID '{clean_role_id}' already exists")
+            raise ValueError(f"Role ID '{clean_role_id}' already exists.")
 
-        new_role = Role(
-            role_id=clean_role_id,
-            name=role_in.name,
-            description=role_in.description,
-            hierarchy_level=role_in.hierarchy_level,
-            is_self_registerable=role_in.is_self_registerable,
-            permissions=role_in.permissions,
-        )
-        db.add(new_role)
-        await db.commit()
-        await db.refresh(new_role)
-        return new_role
+        new_row = {
+            "role_id": clean_role_id,
+            "name": payload.name.strip(),
+            "description": payload.description,
+            "hierarchy_level": payload.hierarchy_level,
+            "is_self_registerable": payload.is_self_registerable,
+            "is_active": True,
+            "permissions": payload.permissions,
+        }
+
+        inserted = await db.insert("roles", new_row)
+        if not inserted:
+            raise ValueError(f"Failed to create role '{clean_role_id}'.")
+
+        role_dict = role_from_row(inserted)
+        return RoleResponse(**role_dict)

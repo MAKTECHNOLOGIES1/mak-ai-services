@@ -1,30 +1,32 @@
 """
-Dynamic Role Model
-Uses meaningful role_id (e.g. 'ROLE_STUDENT', 'ROLE_FACULTY') as primary key
+Role Model Helper for Identity Service
+Provides row-to-dict conversion for Supabase PostgREST responses.
+Pure Python — no SQLAlchemy dependency.
 """
 
-from typing import ClassVar
-
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
-
-from core.database import Base
+from typing import Any
 
 
-class Role(Base):
-    __tablename__ = "roles"
-    __table_args__: ClassVar[dict[str, str]] = {"schema": "identity_service"}
+def role_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert a PostgREST row dict into a normalized role dict."""
+    perms = row.get("permissions")
+    if perms is None:
+        perms = []
+    elif isinstance(perms, str):
+        import json
+        try:
+            perms = json.loads(perms)
+        except Exception:
+            perms = [perms]
 
-    # Meaningful custom role_id: e.g. "ROLE_STUDENT", "ROLE_FACULTY", "ROLE_HOD"
-    role_id = Column(String(50), primary_key=True, index=True)
-    name = Column(String(100), nullable=False)  # e.g. "Senior Technical Lead"
-    description = Column(Text, nullable=True)
-    hierarchy_level = Column(Integer, nullable=False, default=10)  # 1 to 100
-    is_self_registerable = Column(Boolean, nullable=False, default=False)  # TRUE only for ROLE_STUDENT
-    is_active = Column(Boolean, nullable=False, default=True)
-    permissions = Column(JSONB, nullable=True, default=list)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    def __repr__(self):
-        return f"<Role role_id={self.role_id} name={self.name} level={self.hierarchy_level}>"
+    return {
+        "role_id": row.get("role_id"),
+        "name": row.get("name"),
+        "description": row.get("description"),
+        "hierarchy_level": row.get("hierarchy_level", 10),
+        "is_self_registerable": row.get("is_self_registerable", False),
+        "is_active": row.get("is_active", True),
+        "permissions": perms,
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }

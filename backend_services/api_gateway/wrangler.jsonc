@@ -1,13 +1,14 @@
-﻿{
+{
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mak-api-gateway",
   "main": "main.py",
   "compatibility_date": "2026-11-08",
   "compatibility_flags": [
-    "python_workers"
+    "python_workers",
+    "python_shared_standard_library"
   ],
   "vars": {
-    "APP_NAME": "AMK API GATEWAY",
+    "APP_NAME": "AMK API Gateway",
     "SERVICE_NAME": "api_gateway",
     "ENVIRONMENT": "development"
   },
@@ -15,7 +16,7 @@
     "test": {
       "name": "mak-api-gateway-test",
       "vars": {
-        "APP_NAME": "AMK API GATEWAY",
+        "APP_NAME": "AMK API Gateway",
         "SERVICE_NAME": "api_gateway",
         "ENVIRONMENT": "test"
       }
@@ -23,7 +24,7 @@
     "prod": {
       "name": "mak-api-gateway",
       "vars": {
-        "APP_NAME": "AMK API GATEWAY",
+        "APP_NAME": "AMK API Gateway",
         "SERVICE_NAME": "api_gateway",
         "ENVIRONMENT": "production"
       }

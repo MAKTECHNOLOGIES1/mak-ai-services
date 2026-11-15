@@ -4,10 +4,12 @@
   "main": "main.py",
   "compatibility_date": "2026-11-08",
   "compatibility_flags": [
-    "python_workers"
+    "python_workers",
+    "python_shared_standard_library"
   ],
   "vars": {
     "APP_NAME": "AMK Identity Service",
+    "SERVICE_NAME": "identity_service",
     "DB_SCHEMA": "identity_service",
     "ENVIRONMENT": "development"
   },
@@ -16,6 +18,7 @@
       "name": "mak-identity-service-test",
       "vars": {
         "APP_NAME": "AMK Identity Service",
+        "SERVICE_NAME": "identity_service",
         "DB_SCHEMA": "identity_service",
         "ENVIRONMENT": "test"
       }
@@ -24,6 +27,7 @@
       "name": "mak-identity-service",
       "vars": {
         "APP_NAME": "AMK Identity Service",
+        "SERVICE_NAME": "identity_service",
         "DB_SCHEMA": "identity_service",
         "ENVIRONMENT": "production"
       }

@@ -1,9 +1,11 @@
 """
 AMK Technologies - API Gateway Application Entrypoint
-Centralized Reverse Proxy, Pre-Authentication, Rate Limiting, and CORS
+Centralized Reverse Proxy, Pre-Authentication, Rate Limiting, and CORS.
+Compatible with Cloudflare Python Workers (Pyodide ASGI).
 """
 
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
@@ -13,17 +15,19 @@ from core.middleware import (
     AuthPreValidationMiddleware
 )
 from routes.proxy_routes import router as proxy_router
-from services.proxy_service import http_client
+from services.proxy_service import close_http_client
+
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print(f"[Gateway] {settings.APP_NAME} started on port {settings.PORT} ({settings.ENVIRONMENT})")
-    print(f"[Gateway] Routing auth to {settings.IDENTITY_SERVICE_URL}")
+    logger.info("[Gateway] %s started on port %s (%s)", settings.APP_NAME, settings.PORT, settings.ENVIRONMENT)
     yield
-    # Shutdown: Close HTTP connection pool
-    await http_client.aclose()
-    print(f"[Gateway] Cleaned up HTTP client pool.")
+    # Shutdown
+    await close_http_client()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -52,6 +56,7 @@ app.add_middleware(AuthPreValidationMiddleware)
 # 3. Include Proxy Routing Table
 app.include_router(proxy_router)
 
+
 # 4. Gateway Health Check
 @app.get("/health", tags=["Health"])
 async def gateway_health():
@@ -63,12 +68,14 @@ async def gateway_health():
         "tenant_service": settings.TENANT_SERVICE_URL
     }
 
+
 # 5. Cloudflare Workers Python ASGI Handler
 try:
     from workers import asgi
     Default = asgi.entrypoint(app)
 except (ImportError, Exception):
     Default = app
+
 
 async def on_fetch(request, env):
     try:
@@ -80,6 +87,7 @@ async def on_fetch(request, env):
             return await asgi.fetch(app, request, env)
         except Exception:
             return app
+
 
 if __name__ == "__main__":
     import uvicorn

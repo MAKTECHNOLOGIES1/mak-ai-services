@@ -1,5 +1,6 @@
 """
-Authentication & User Provisioning Service
+Authentication & User Provisioning Service for Identity Service
+Cloudflare Workers compatible via Supabase PostgREST Client
 ZERO Random UUIDs:
 - user_id is the primary identifier (Roll Number for students, Staff ID for staff)
 - tenant_id is the custom college code ("SRIT-ATP")
@@ -7,15 +8,14 @@ ZERO Random UUIDs:
 """
 
 import uuid
-
+from typing import Any
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.database import SupabaseClient
 from core.security import create_access_token, hash_password, verify_password
-from models.tenant_model import Tenant
-from models.user_model import User
+from models.tenant_model import tenant_from_row
+from models.user_model import user_from_row
 from schemas.auth_schemas import (
     AdminUserProvisionRequest,
     StudentRegisterRequest,
@@ -25,10 +25,10 @@ from schemas.auth_schemas import (
 )
 from services.role_service import RoleService
 
-class AuthService:
 
+class AuthService:
     @staticmethod
-    async def register_student(db: AsyncSession, payload: StudentRegisterRequest) -> UserResponse:
+    async def register_student(db: SupabaseClient, payload: StudentRegisterRequest) -> UserResponse:
         """
         Public self-registration for STUDENTS ONLY.
         - user_id = Roll Number (e.g. "22731A0501")
@@ -39,43 +39,48 @@ class AuthService:
         custom_tenant_id = payload.tenant_id.strip().upper()
 
         # 1. Look up college tenant by custom tenant_id
-        result = await db.execute(
-            select(Tenant).where(Tenant.tenant_id == custom_tenant_id)
-        )
-        tenant = result.scalar_one_or_none()
-        if not tenant:
+        tenant_row = await db.select("tenants", filters={"tenant_id": f"eq.{custom_tenant_id}"}, single=True)
+        if not tenant_row:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"College ID '{custom_tenant_id}' not found. Please verify with your coordinator."
             )
 
-        if not tenant.is_active:
+        tenant = tenant_from_row(tenant_row)
+        if not tenant.get("is_active", True):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This college subscription is currently inactive."
             )
 
         # 2. Check student seat cap
-        if tenant.current_students >= tenant.max_students:
+        cur_students = tenant.get("current_students", 0)
+        max_students = tenant.get("max_students", 60)
+        if cur_students >= max_students:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Student seat limit reached ({tenant.current_students}/{tenant.max_students}) for this college."
+                detail=f"Student seat limit reached ({cur_students}/{max_students}) for this college."
             )
 
-        # 3. Check duplicate user_id (roll number) or email in this college
-        existing_check = await db.execute(
-            select(User).where(
-                User.tenant_id == custom_tenant_id,
-                or_(User.email == payload.email.lower(), User.user_id == student_user_id)
-            )
+        # 3. Check duplicate user_id (roll number)
+        existing_uid = await db.select(
+            "users",
+            filters={"tenant_id": f"eq.{custom_tenant_id}", "user_id": f"eq.{student_user_id}"},
+            single=True
         )
-        existing = existing_check.scalar_one_or_none()
-        if existing:
-            if existing.user_id == student_user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Student Roll Number '{student_user_id}' is already registered in this college."
-                )
+        if existing_uid:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Student Roll Number '{student_user_id}' is already registered in this college."
+            )
+
+        # Check duplicate email
+        existing_email = await db.select(
+            "users",
+            filters={"tenant_id": f"eq.{custom_tenant_id}", "email": f"eq.{payload.email.lower()}"},
+            single=True
+        )
+        if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Email '{payload.email}' is already registered in this college."
@@ -84,41 +89,58 @@ class AuthService:
         # 4. Verify ROLE_STUDENT exists
         student_role = await RoleService.get_role_by_id(db, "ROLE_STUDENT")
         if not student_role:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="System error: ROLE_STUDENT is not initialized."
-            )
+            # Auto-seed if missing
+            await RoleService.seed_default_roles_if_missing(db)
+            student_role = await RoleService.get_role_by_id(db, "ROLE_STUDENT")
 
         # 5. Create Student User (ZERO Random UUIDs)
-        new_student = User(
-            user_id=student_user_id,          # Custom Roll Number
-            tenant_id=custom_tenant_id,       # Custom College Code ("SRIT-ATP")
-            email=payload.email.lower(),
-            password_hash=hash_password(payload.password),
-            full_name=payload.full_name.strip(),
-            department=payload.department.strip().upper(),
-            batch_year=payload.batch_year.strip(),
-            role_id="ROLE_STUDENT",           # Custom Role ID
-            created_by_user_id=None,
-            is_active=True
-        )
-        db.add(new_student)
+        new_user_data = {
+            "user_id": student_user_id,
+            "tenant_id": custom_tenant_id,
+            "email": payload.email.lower(),
+            "password_hash": hash_password(payload.password),
+            "full_name": payload.full_name.strip(),
+            "department": payload.department.strip().upper(),
+            "batch_year": payload.batch_year.strip(),
+            "role_id": "ROLE_STUDENT",
+            "created_by_user_id": None,
+            "is_active": True,
+        }
+
+        inserted = await db.insert("users", new_user_data)
+        if not inserted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to register student record."
+            )
 
         # 6. Increment current_students counter
-        tenant.current_students += 1
+        await db.update(
+            "tenants",
+            filters={"tenant_id": f"eq.{custom_tenant_id}"},
+            values={"current_students": cur_students + 1}
+        )
 
-        await db.commit()
-        await db.refresh(new_student)
-
-        resp = UserResponse.model_validate(new_student)
-        resp.role_name = student_role.name
+        user_dict = user_from_row(inserted)
+        resp = UserResponse(
+            user_id=user_dict["user_id"],
+            tenant_id=user_dict["tenant_id"],
+            email=user_dict["email"],
+            full_name=user_dict["full_name"],
+            department=user_dict["department"],
+            batch_year=user_dict.get("batch_year"),
+            role_id=user_dict["role_id"],
+            role_name=student_role["name"] if student_role else "Enrolled Student",
+            is_active=user_dict["is_active"],
+            created_at=user_dict.get("created_at"),
+        )
         return resp
 
     @staticmethod
     async def provision_user_by_admin(
-        db: AsyncSession,
+        db: SupabaseClient,
         payload: AdminUserProvisionRequest,
-        creator: User
+        creator: dict[str, Any]
     ) -> UserResponse:
         """
         Admin provisioned creation for staff/faculty.
@@ -137,125 +159,181 @@ class AuthService:
             )
 
         # 2. Check authority: Creator must have higher hierarchy than the target role
-        creator_role = await RoleService.get_role_by_id(db, creator.role_id)
-        creator_level = creator_role.hierarchy_level if creator_role else 0
+        creator_role_id = creator.get("role_id", "")
+        creator_level = 100 if creator_role_id in ["ROLE_SUPER_ADMIN", "ROLE_SUPERADMIN"] else 0
+        if creator_level < 100:
+            creator_role = await RoleService.get_role_by_id(db, creator_role_id)
+            creator_level = creator_role.get("hierarchy_level", 0) if creator_role else 0
 
-        if creator_level <= target_role.hierarchy_level:
+        target_level = target_role.get("hierarchy_level", 0)
+        if creator_level <= target_level:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You do not have permission to provision a role with level {target_role.hierarchy_level}. Your level is {creator_level}."
+                detail=f"You do not have permission to provision a role with level {target_level}. Your level is {creator_level}."
             )
 
         # 3. Determine Standard Staff user_id
+        creator_tenant_id = creator.get("tenant_id") or settings.DEFAULT_TENANT_ID
         if payload.staff_id and payload.staff_id.strip():
             staff_user_id = payload.staff_id.strip().upper()
         else:
-            # Generate standard staff id: e.g. "FAC-SRIT-001"
             prefix = clean_role_id.replace("ROLE_", "")[:3]
             random_suffix = str(uuid.uuid4())[:5].upper()
-            staff_user_id = f"{prefix}-{creator.tenant_id}-{random_suffix}"
+            staff_user_id = f"{prefix}-{creator_tenant_id}-{random_suffix}"
 
         # 4. Check duplicate user_id or email
-        existing_check = await db.execute(
-            select(User).where(
-                User.tenant_id == creator.tenant_id,
-                or_(User.email == payload.email.lower(), User.user_id == staff_user_id)
-            )
+        existing_uid = await db.select(
+            "users",
+            filters={"tenant_id": f"eq.{creator_tenant_id}", "user_id": f"eq.{staff_user_id}"},
+            single=True
         )
-        existing = existing_check.scalar_one_or_none()
-        if existing:
+        if existing_uid:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"A user with email '{payload.email}' or user ID '{staff_user_id}' already exists."
+                detail=f"User ID '{staff_user_id}' already exists."
+            )
+
+        existing_email = await db.select(
+            "users",
+            filters={"tenant_id": f"eq.{creator_tenant_id}", "email": f"eq.{payload.email.lower()}"},
+            single=True
+        )
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Email '{payload.email}' already exists in this college."
             )
 
         # 5. Check faculty seat caps if role is ROLE_FACULTY
         if clean_role_id == "ROLE_FACULTY":
-            tenant_res = await db.execute(select(Tenant).where(Tenant.tenant_id == creator.tenant_id))
-            tenant = tenant_res.scalar_one_or_none()
-            if tenant and tenant.current_faculty >= tenant.max_faculty:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Faculty seat limit reached ({tenant.current_faculty}/{tenant.max_faculty}) for this college."
+            tenant_row = await db.select("tenants", filters={"tenant_id": f"eq.{creator_tenant_id}"}, single=True)
+            if tenant_row:
+                tenant = tenant_from_row(tenant_row)
+                cur_fac = tenant.get("current_faculty", 0)
+                max_fac = tenant.get("max_faculty", 5)
+                if cur_fac >= max_fac:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Faculty seat limit reached ({cur_fac}/{max_fac}) for this college."
+                    )
+                await db.update(
+                    "tenants",
+                    filters={"tenant_id": f"eq.{creator_tenant_id}"},
+                    values={"current_faculty": cur_fac + 1}
                 )
-            if tenant:
-                tenant.current_faculty += 1
 
         # 6. Create User (ZERO Random UUIDs)
-        new_staff = User(
-            user_id=staff_user_id,             # Custom Staff ID
-            tenant_id=creator.tenant_id,       # Same custom college code as creator
-            email=payload.email.lower(),
-            password_hash=hash_password(payload.initial_password),
-            full_name=payload.full_name.strip(),
-            department=payload.department.strip().upper(),
-            role_id=target_role.role_id,       # Meaningful Role ID
-            created_by_user_id=creator.user_id,# Admin's own user_id!
-            is_active=True
-        )
-        db.add(new_staff)
-        await db.commit()
-        await db.refresh(new_staff)
+        new_staff_data = {
+            "user_id": staff_user_id,
+            "tenant_id": creator_tenant_id,
+            "email": payload.email.lower(),
+            "password_hash": hash_password(payload.initial_password),
+            "full_name": payload.full_name.strip(),
+            "department": payload.department.strip().upper(),
+            "role_id": target_role["role_id"],
+            "created_by_user_id": creator.get("user_id"),
+            "is_active": True,
+        }
 
-        resp = UserResponse.model_validate(new_staff)
-        resp.role_name = target_role.name
-        return resp
+        inserted = await db.insert("users", new_staff_data)
+        if not inserted:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to provision staff record."
+            )
+
+        user_dict = user_from_row(inserted)
+        return UserResponse(
+            user_id=user_dict["user_id"],
+            tenant_id=user_dict["tenant_id"],
+            email=user_dict["email"],
+            full_name=user_dict["full_name"],
+            department=user_dict["department"],
+            batch_year=user_dict.get("batch_year"),
+            role_id=user_dict["role_id"],
+            role_name=target_role.get("name"),
+            is_active=user_dict["is_active"],
+            created_at=user_dict.get("created_at"),
+        )
 
     @staticmethod
-    async def login_user(db: AsyncSession, payload: UserLoginRequest) -> TokenResponse:
+    async def login_user(db: SupabaseClient, payload: UserLoginRequest) -> TokenResponse:
         """
-        Unified Login: Users can login with EITHER their Email OR their user_id (Roll number / Staff ID)!
-        Supports flexible alias fields: login_identifier, username, email, or roll_number.
+        Unified Login: Users can login with EITHER their Email OR their user_id (Roll number / Staff ID).
         """
         identifier = payload.get_identifier()
 
-        result = await db.execute(
-            select(User).where(
-                or_(
-                    User.email == identifier.lower(),
-                    User.user_id == identifier.upper(),
-                    User.user_id == identifier
-                )
-            )
+        # Try user_id match first (case-insensitive upper)
+        user_row = await db.select(
+            "users",
+            filters={"user_id": f"eq.{identifier.upper()}"},
+            single=True
         )
-        user = result.scalar_one_or_none()
 
-        if not user:
+        # Try raw user_id if not found
+        if not user_row:
+            user_row = await db.select(
+                "users",
+                filters={"user_id": f"eq.{identifier}"},
+                single=True
+            )
+
+        # Try email match if still not found
+        if not user_row:
+            user_row = await db.select(
+                "users",
+                filters={"email": f"eq.{identifier.lower()}"},
+                single=True
+            )
+
+        if not user_row:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"No account found with identifier '{identifier}'. Please check your Roll Number or Email."
             )
 
-        if not verify_password(payload.password, user.password_hash):
+        user = user_from_row(user_row)
+
+        if not verify_password(payload.password, user.get("password_hash", "")):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect password. Please verify the password you entered during registration."
+                detail="Incorrect password. Please verify the credentials you entered."
             )
 
-        if not user.is_active:
+        if not user.get("is_active", True):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This account has been deactivated. Please contact your administrator."
             )
 
-        role = await RoleService.get_role_by_id(db, user.role_id)
-        role_name = role.name if role else user.role_id
+        role = await RoleService.get_role_by_id(db, user["role_id"])
+        role_name = role.get("name") if role else user["role_id"]
 
-        # Generate JWT Token: 'sub' contains the standard user_id
+        # Generate JWT Token
         access_token = create_access_token(
-            subject=user.user_id, # "22731A0501" or "FAC-SRIT-001"
-            tenant_id=user.tenant_id, # "SRIT-ATP"
-            role=user.role_id, # "ROLE_STUDENT", "ROLE_FACULTY"
+            subject=user["user_id"],
+            tenant_id=user["tenant_id"],
+            role=user["role_id"],
             extra_claims={
                 "role_name": role_name,
-                "email": user.email,
-                "department": user.department,
-                "full_name": user.full_name
+                "email": user["email"],
+                "department": user.get("department", "GENERAL"),
+                "full_name": user.get("full_name", "")
             }
         )
 
-        user_resp = UserResponse.model_validate(user)
-        user_resp.role_name = role_name
+        user_resp = UserResponse(
+            user_id=user["user_id"],
+            tenant_id=user["tenant_id"],
+            email=user["email"],
+            full_name=user["full_name"],
+            department=user.get("department", "GENERAL"),
+            batch_year=user.get("batch_year"),
+            role_id=user["role_id"],
+            role_name=role_name,
+            is_active=user["is_active"],
+            created_at=user.get("created_at"),
+        )
 
         return TokenResponse(
             access_token=access_token,

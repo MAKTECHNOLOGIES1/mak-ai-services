@@ -1,31 +1,24 @@
 """
-Tenant Model for Identity Service
-Uses custom, meaningful tenant_id (e.g. "SRIT-ATP", "JNTUA-CEA")
+Tenant Model Helper for Identity Service
+Provides row-to-dict conversion for PostgREST responses.
+Pure Python — no SQLAlchemy dependency.
 """
 
-from typing import ClassVar
-
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
-
-from core.database import Base
+from typing import Any
 
 
-class Tenant(Base):
-    __tablename__ = "tenants"
-    __table_args__: ClassVar[dict[str, str]] = {"schema": "identity_service"}
-
-    # Custom College Identifier (e.g. "SRIT-ATP")
-    tenant_id = Column(String(50), primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    university_affiliation = Column(String(100), default="JNTUA")
-    tier = Column(String(50), default="STARTER")
-    max_students = Column(Integer, default=60)
-    max_faculty = Column(Integer, default=5)
-    current_students = Column(Integer, default=0)
-    current_faculty = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    def __repr__(self):
-        return f"<Tenant tenant_id={self.tenant_id} name={self.name}>"
+def tenant_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert a PostgREST row dict into a normalized tenant dict."""
+    return {
+        "tenant_id": row.get("tenant_id"),
+        "name": row.get("name"),
+        "university_affiliation": row.get("university_affiliation", "JNTUA"),
+        "tier": row.get("tier", "STARTER"),
+        "max_students": row.get("max_students", 60),
+        "current_students": row.get("current_students", 0),
+        "max_faculty": row.get("max_faculty", 5),
+        "current_faculty": row.get("current_faculty", 0),
+        "is_active": row.get("is_active", True),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }

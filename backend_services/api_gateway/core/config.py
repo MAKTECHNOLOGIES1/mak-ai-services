@@ -1,34 +1,40 @@
 """
 API Gateway Configuration
 Dynamically routes to Cloudflare Workers environments (Test & Production)
-ZERO localhost URLs - All routing uses Cloudflare Workers URLs
+ZERO hardcoded localhost URLs - All routing uses Cloudflare Workers URLs with env overrides
 """
 
 import os
 from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 
-SERVICE_DIR = Path(__file__).resolve().parents[1]
-MONOREPO_ROOT = Path(__file__).resolve().parents[3]
+active_env_file = None
+try:
+    SERVICE_DIR = Path(__file__).resolve().parents[1]
+    MONOREPO_ROOT = Path(__file__).resolve().parents[3]
+    env_files = [
+        MONOREPO_ROOT / ".env",
+        SERVICE_DIR / ".env",
+        Path.cwd() / ".env"
+    ]
+    active_env_file = next((f for f in env_files if f.is_file()), None)
+except Exception:
+    pass
 
-env_files = [
-    MONOREPO_ROOT / ".env",
-    SERVICE_DIR / ".env",
-    Path.cwd() / ".env"
-]
-active_env_file = next((f for f in env_files if f.exists()), None)
 
 class GatewaySettings(BaseSettings):
     APP_NAME: str = "AMK API Gateway"
-    ENVIRONMENT: str = "test" # 'test' or 'production'
-    DEBUG: bool = True
+    ENVIRONMENT: str = "test"  # 'test' or 'production'
+    DEBUG: bool = False
     PORT: int = 8000
 
     # JWT Authentication
     JWT_SECRET: str = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
     JWT_ALGORITHM: str = "HS256"
+
+    # Inter-Service Communication
+    INTERNAL_SERVICE_KEY: str = "amk-internal-service-secret-key-2026"
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
@@ -76,7 +82,19 @@ class GatewaySettings(BaseSettings):
     def LEARNING_SERVICE_URL(self) -> str:
         return os.getenv("LEARNING_SERVICE_URL") or self.get_service_url("learning-service")
 
-    # Cloudflare CORS Allowed Origins (NO localhost)
+    @property
+    def ACADEMIC_SERVICE_URL(self) -> str:
+        return os.getenv("ACADEMIC_SERVICE_URL") or self.get_service_url("academic-service")
+
+    @property
+    def ASSESSMENT_SERVICE_URL(self) -> str:
+        return os.getenv("ASSESSMENT_SERVICE_URL") or self.get_service_url("assessment-service")
+
+    @property
+    def PLACEMENT_SERVICE_URL(self) -> str:
+        return os.getenv("PLACEMENT_SERVICE_URL") or self.get_service_url("placement-service")
+
+    # Cloudflare CORS Allowed Origins
     CORS_ORIGINS: List[str] = [
         "https://mak-ui-test.anilkumarreddy3029.workers.dev",
         "https://mak-ui.anilkumarreddy3029.workers.dev",
@@ -87,13 +105,14 @@ class GatewaySettings(BaseSettings):
         "*"
     ]
 
-    # Public Unauthenticated Paths
+    # Public Unauthenticated Paths (bypasses auth pre-validation)
     PUBLIC_PATHS: List[str] = [
         "/",
         "/docs",
         "/openapi.json",
         "/redoc",
         "/health",
+        "/api/v1/gateway/routes",
         "/api/v1/auth/login",
         "/api/v1/auth/register",
         "/api/v1/auth/register/student",
@@ -105,5 +124,6 @@ class GatewaySettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
 
 settings = GatewaySettings()

@@ -11,6 +11,7 @@ EXCLUDED_DEPS = {
     "bcrypt",
     "greenlet",
     "asyncpg",
+    "httpx",
     "workers-py",
     "workers-runtime-sdk",
 }
@@ -19,7 +20,46 @@ def clean_dep_name(dep_str: str) -> str:
     m = re.match(r"^([a-zA-Z0-9_-]+)", dep_str)
     return m.group(1).lower() if m else ""
 
+def patch_wrangler_rules(service_dir: str = "."):
+    wrangler_file = os.path.join(service_dir, "wrangler.jsonc")
+    if not os.path.isfile(wrangler_file):
+        return
+
+    with open(wrangler_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if '"rules"' in content:
+        return
+
+    rules_block = '''  "rules": [
+    {
+      "type": "PythonModule",
+      "globs": [
+        "*.py",
+        "core/**/*.py",
+        "models/**/*.py",
+        "routes/**/*.py",
+        "schemas/**/*.py",
+        "services/**/*.py"
+      ],
+      "fallthrough": false
+    }
+  ],
+'''
+    if '"compatibility_flags"' in content:
+        idx = content.find('"compatibility_flags"')
+        bracket_idx = content.find(']', idx)
+        if bracket_idx != -1:
+            comma_idx = content.find(',', bracket_idx)
+            if comma_idx != -1:
+                new_content = content[:comma_idx + 1] + "\n" + rules_block + content[comma_idx + 1:]
+                with open(wrangler_file, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                print(f"✅ Injected exclusion rules into {wrangler_file}")
+
 def convert(service_dir: str = "."):
+    patch_wrangler_rules(service_dir)
+
     pyproject_file = os.path.join(service_dir, "pyproject.toml")
     req_file = os.path.join(service_dir, "requirements.txt")
 
@@ -52,6 +92,8 @@ def convert(service_dir: str = "."):
                 clean = clean.replace("passlib[bcrypt]", "passlib")
             if "sqlalchemy[asyncio]" in clean:
                 clean = clean.replace("sqlalchemy[asyncio]", "sqlalchemy")
+            if "python-jose[cryptography]" in clean:
+                clean = clean.replace("python-jose[cryptography]", "python-jose")
             deps.append(clean)
 
     pyproject_content = f"""[build-system]

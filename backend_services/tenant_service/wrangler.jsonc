@@ -6,6 +6,20 @@
   "compatibility_flags": [
     "python_workers"
   ],
+  "rules": [
+    {
+      "type": "PythonModule",
+      "globs": [
+        "*.py",
+        "core/**/*.py",
+        "models/**/*.py",
+        "routes/**/*.py",
+        "schemas/**/*.py",
+        "services/**/*.py"
+      ],
+      "fallthrough": false
+    }
+  ],
   "vars": {
     "APP_NAME": "AMK Tenant Service",
     "SERVICE_NAME": "tenant_service",

@@ -294,32 +294,7 @@ jobs:
             cd "$GITHUB_WORKSPACE/$SVC_PATH"
 
             # Auto-convert requirements.txt to pyproject.toml if missing
-            if [ -f "requirements.txt" ] && [ ! -f "pyproject.toml" ]; then
-              echo "Converting requirements.txt to pyproject.toml for Python Worker..."
-              python -c "
-import sys
-clean_name = '$SVC_NAME'.replace('_', '-')
-reqs = [l.strip() for l in open('requirements.txt') if l.strip() and not l.startswith('#') and not l.startswith('-')]
-pyproject_body = f'''[build-system]
-requires = [\"setuptools>=61.0\"]
-build-backend = \"setuptools.build_meta\"
-
-[project]
-name = \"mak-{clean_name}\"
-version = \"1.0.0\"
-description = \"Cloudflare Worker for {clean_name}\"
-readme = \"README.md\"
-requires-python = \">=3.11\"
-dependencies = {reqs}
-
-[tool.setuptools.packages.find]
-where = [\".\"]
-include = [\"*\"]
-'''
-open('pyproject.toml', 'w').write(pyproject_body)
-"
-              rm -f requirements.txt
-            fi
+            python "$GITHUB_WORKSPACE/.github/scripts/convert_requirements.py" .
 
             # Deploy using pywrangler or wrangler
             DEPLOY_LOG="/tmp/deploy_${SVC_NAME}.log"

@@ -5,6 +5,7 @@
 export const API_CONFIG = {
   GATEWAY_URL: 'https://mak-api-gateway-test.anilkumarreddy3029.workers.dev',
   IDENTITY_URL: 'https://mak-identity-service-test.anilkumarreddy3029.workers.dev',
+  TENANT_URL: 'https://mak-tenant-service-test.anilkumarreddy3029.workers.dev',
   DEFAULT_TENANT: 'SRIT-ATP',
   ENDPOINTS: {
     AUTH_LOGIN: '/api/v1/auth/login',
@@ -13,6 +14,8 @@ export const API_CONFIG = {
     AUTH_ME: '/api/v1/auth/me',
     ROLES: '/api/v1/roles',
     USERS: '/api/v1/users',
+    TENANTS: '/api/v1/tenants',
+    TENANT_CURRENT: '/api/v1/tenants/current',
     HEALTH: '/health'
   }
 };
@@ -24,4 +27,3 @@ export const getApiBaseUrl = () => {
 export const setApiBaseUrl = (url) => {
   localStorage.setItem('mak_api_gateway_url', url);
 };
-

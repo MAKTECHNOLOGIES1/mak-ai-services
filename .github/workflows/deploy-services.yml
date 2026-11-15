@@ -312,14 +312,18 @@ jobs:
             # Auto-convert requirements.txt to pyproject.toml if missing
             python "$GITHUB_WORKSPACE/.github/scripts/convert_requirements.py" .
 
-            # Deploy using pywrangler or wrangler
+            # Deploy using pywrangler for Python Workers
             DEPLOY_LOG="/tmp/deploy_${SVC_NAME}.log"
             if [ -f "pyproject.toml" ]; then
-              echo "Deploying Python Worker via pywrangler/wrangler..."
-              (uvx --from workers-py pywrangler deploy --env "$TARGET_ENV" 2>&1 || npx wrangler deploy --env "$TARGET_ENV" 2>&1) | tee "$DEPLOY_LOG"
+              echo "Deploying Python Worker via pywrangler..."
+              set -o pipefail
+              uvx --from workers-py pywrangler deploy --env "$TARGET_ENV" 2>&1 | tee "$DEPLOY_LOG"
+              set +o pipefail
             else
               echo "Deploying standard Worker via wrangler..."
+              set -o pipefail
               npx wrangler deploy --env "$TARGET_ENV" 2>&1 | tee "$DEPLOY_LOG"
+              set +o pipefail
             fi
 
             # Extract deployed workers.dev URL if present

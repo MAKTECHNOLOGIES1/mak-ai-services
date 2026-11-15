@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mak-tenant-service",
   "main": "main.py",
@@ -7,19 +7,27 @@
     "python_workers"
   ],
   "vars": {
-    "APP_NAME": "AMK TENANT SERVICE",
-    "SERVICE_NAME": "tenant_service"
+    "APP_NAME": "AMK Tenant Service",
+    "SERVICE_NAME": "tenant_service",
+    "DB_SCHEMA": "identity_service",
+    "ENVIRONMENT": "development"
   },
   "env": {
     "test": {
       "name": "mak-tenant-service-test",
       "vars": {
+        "APP_NAME": "AMK Tenant Service",
+        "SERVICE_NAME": "tenant_service",
+        "DB_SCHEMA": "identity_service",
         "ENVIRONMENT": "test"
       }
     },
     "prod": {
       "name": "mak-tenant-service",
       "vars": {
+        "APP_NAME": "AMK Tenant Service",
+        "SERVICE_NAME": "tenant_service",
+        "DB_SCHEMA": "identity_service",
         "ENVIRONMENT": "production"
       }
     }

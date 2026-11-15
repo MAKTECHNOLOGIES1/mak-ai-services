@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
 import logging
-import os
 import secrets
 from typing import Any
 
@@ -126,11 +125,18 @@ def create_access_token(
     if extra_claims:
         to_encode.update(extra_claims)
 
+    if not settings.JWT_SECRET:
+        logger.error("JWT_SECRET is missing. Please set JWT_SECRET in .env or Cloudflare Worker secrets.")
+        raise ValueError("JWT_SECRET is not configured.")
+
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
     """Decodes and validates a JWT token"""
+    if not settings.JWT_SECRET:
+        logger.error("JWT_SECRET is missing. Cannot decode access token.")
+        return None
     try:
         return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
@@ -139,6 +145,6 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
 
 def verify_internal_key(provided_key: str | None) -> bool:
     """Validates secret key for trusted microservice-to-microservice calls"""
-    if not provided_key:
+    if not provided_key or not settings.INTERNAL_SERVICE_KEY:
         return False
     return hmac.compare_digest(provided_key.strip(), settings.INTERNAL_SERVICE_KEY.strip())

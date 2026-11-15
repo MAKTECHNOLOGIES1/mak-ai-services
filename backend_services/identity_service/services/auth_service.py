@@ -32,58 +32,62 @@ class AuthService:
         """
         Public self-registration for STUDENTS ONLY.
         - user_id = Roll Number (e.g. "22731A0501")
-        - tenant_id = College Code (e.g. "SRIT-ATP")
+        - tenant_id = Optional College Code (defaults to DEFAULT_TENANT_ID)
         - role_id = "ROLE_STUDENT"
         """
         student_user_id = payload.roll_number.strip().upper()
-        custom_tenant_id = payload.tenant_id.strip().upper()
+        custom_tenant_id = payload.get_tenant_id()
 
-        # 1. Look up college tenant by custom tenant_id
+        # 1. Look up college tenant by custom tenant_id; auto-provision if missing so college is not required
         tenant_row = await db.select("tenants", filters={"tenant_id": f"eq.{custom_tenant_id}"}, single=True)
         if not tenant_row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"College ID '{custom_tenant_id}' not found. Please verify with your coordinator."
-            )
+            try:
+                college_display = payload.college_name or f"College ({custom_tenant_id})"
+                await db.insert("tenants", {
+                    "tenant_id": custom_tenant_id,
+                    "name": college_display,
+                    "university_affiliation": "AFFILIATED",
+                    "tier": "PROFESSIONAL",
+                    "max_students": 10000,
+                    "max_faculty": 500,
+                    "current_students": 0,
+                    "current_faculty": 0,
+                    "is_active": True,
+                })
+                tenant_row = await db.select("tenants", filters={"tenant_id": f"eq.{custom_tenant_id}"}, single=True)
+            except Exception as e:
+                logger.warning("Could not auto-create tenant record for %s: %s", custom_tenant_id, e)
 
-        tenant = tenant_from_row(tenant_row)
-        if not tenant.get("is_active", True):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="This college subscription is currently inactive."
-            )
+        if tenant_row:
+            tenant = tenant_from_row(tenant_row)
+            if not tenant.get("is_active", True):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="This college subscription is currently inactive."
+                )
 
-        # 2. Check student seat cap
-        cur_students = tenant.get("current_students", 0)
-        max_students = tenant.get("max_students", 60)
-        if cur_students >= max_students:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Student seat limit reached ({cur_students}/{max_students}) for this college."
-            )
-
-        # 3. Check duplicate user_id (roll number)
+        # 2. Check duplicate user_id (roll number)
         existing_uid = await db.select(
             "users",
-            filters={"tenant_id": f"eq.{custom_tenant_id}", "user_id": f"eq.{student_user_id}"},
+            filters={"user_id": f"eq.{student_user_id}"},
             single=True
         )
         if existing_uid:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Student Roll Number '{student_user_id}' is already registered in this college."
+                detail=f"Student Roll Number '{student_user_id}' is already registered."
             )
 
         # Check duplicate email
         existing_email = await db.select(
             "users",
-            filters={"tenant_id": f"eq.{custom_tenant_id}", "email": f"eq.{payload.email.lower()}"},
+            filters={"email": f"eq.{payload.email.lower()}"},
             single=True
         )
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Email '{payload.email}' is already registered in this college."
+                detail=f"Email '{payload.email}' is already registered."
             )
 
         # 4. Verify ROLE_STUDENT exists
@@ -261,7 +265,13 @@ class AuthService:
         """
         Unified Login: Users can login with EITHER their Email OR their user_id (Roll number / Staff ID).
         """
-        identifier = payload.get_identifier()
+        try:
+            identifier = payload.get_identifier()
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
 
         # Try user_id match first (case-insensitive upper)
         user_row = await db.select(

@@ -6,7 +6,6 @@ ZERO hardcoded localhost URLs - All routing uses Cloudflare Workers URLs with en
 
 import os
 from pathlib import Path
-from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 active_env_file = None
@@ -30,11 +29,11 @@ class GatewaySettings(BaseSettings):
     PORT: int = 8000
 
     # JWT Authentication
-    JWT_SECRET: str = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+    JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"
 
     # Inter-Service Communication
-    INTERNAL_SERVICE_KEY: str = "amk-internal-service-secret-key-2026"
+    INTERNAL_SERVICE_KEY: str = ""
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
@@ -95,7 +94,7 @@ class GatewaySettings(BaseSettings):
         return os.getenv("PLACEMENT_SERVICE_URL") or self.get_service_url("placement-service")
 
     # Cloudflare CORS Allowed Origins
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: list[str] = [
         "https://mak-ui-test.anilkumarreddy3029.workers.dev",
         "https://mak-ui.anilkumarreddy3029.workers.dev",
         "https://mak-api-gateway-test.anilkumarreddy3029.workers.dev",
@@ -106,7 +105,7 @@ class GatewaySettings(BaseSettings):
     ]
 
     # Public Unauthenticated Paths (bypasses auth pre-validation)
-    PUBLIC_PATHS: List[str] = [
+    PUBLIC_PATHS: list[str] = [
         "/",
         "/docs",
         "/openapi.json",

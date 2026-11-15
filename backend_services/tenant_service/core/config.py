@@ -3,7 +3,6 @@ Tenant Service Configuration
 Supports Supabase PostgREST, Cloudflare Workers, and multi-tenant JWT validation
 """
 
-import os
 from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,11 +47,17 @@ class Settings(BaseSettings):
     DB_SSL_MODE: str = "require"
 
     # JWT Authentication
-    JWT_SECRET: str = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+    JWT_SECRET: str = Field(
+        default="",
+        description="Secret key for verifying JWT tokens (set in .env or Cloudflare Worker Secrets)"
+    )
     JWT_ALGORITHM: str = "HS256"
 
     # Microservice-to-Microservice Internal Security
-    INTERNAL_SERVICE_KEY: str = "amk-internal-service-secret-key-2026"
+    INTERNAL_SERVICE_KEY: str = Field(
+        default="",
+        description="Shared secret key for inter-service authentication (set in .env or Cloudflare Worker Secrets)"
+    )
     DEFAULT_TENANT_ID: str = "SRIT-ATP"
 
     model_config = SettingsConfigDict(

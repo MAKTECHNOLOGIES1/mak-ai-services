@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Supabase Configuration (PostgREST / REST API)
     SUPABASE_URL: str = Field(
-        default="https://enkssiilvwiemxvsqaoy.supabase.co",
+        default="",
         description="Supabase project URL (e.g. https://enkssiilvwiemxvsqaoy.supabase.co)"
     )
     SUPABASE_SERVICE_KEY: str = Field(
@@ -40,21 +40,27 @@ class Settings(BaseSettings):
 
     # Legacy DB connection fields (optional fallback)
     DATABASE_URL: str = ""
-    DB_HOST: str = "aws-0-ap-south-1.pooler.supabase.com"
+    DB_HOST: str = ""
     DB_PORT: int = 6543
     DB_NAME: str = "postgres"
-    DB_USER: str = "postgres.enkssiilvwiemxvsqaoy"
+    DB_USER: str = ""
     DB_PASSWORD: str = ""
     DB_SSL_MODE: str = "require"
 
     # JWT Authentication
-    JWT_SECRET: str = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+    JWT_SECRET: str = Field(
+        default="",
+        description="Secret key for signing JWT tokens (set in .env or Cloudflare Worker Secrets)"
+    )
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # Inter-Service Communication
-    INTERNAL_SERVICE_KEY: str = "amk-internal-service-secret-key-2026"
+    INTERNAL_SERVICE_KEY: str = Field(
+        default="",
+        description="Shared secret key for inter-service authentication (set in .env or Cloudflare Worker Secrets)"
+    )
     TENANT_SERVICE_URL: str = ""
     DEFAULT_TENANT_ID: str = "SRIT-ATP"
 

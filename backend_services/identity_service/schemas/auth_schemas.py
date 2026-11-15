@@ -48,7 +48,9 @@ class RoleResponse(BaseModel):
 # 2. Registration Schemas (Only Students Can Self-Register)
 # -------------------------------------------------------------
 class StudentRegisterRequest(BaseModel):
-    tenant_id: str = Field(..., example="SRIT-ATP", description="Custom College ID / Code")
+    tenant_id: str | None = Field(default=None, example="SRIT-ATP", description="Optional College ID / Code (not required)")
+    college_id: str | None = Field(default=None, example="SRIT-ATP", description="Alias for tenant_id")
+    college_name: str | None = Field(default=None, example="SRIT", description="Optional College name")
     roll_number: str = Field(
         ...,
         example="22731A0501",
@@ -57,8 +59,14 @@ class StudentRegisterRequest(BaseModel):
     email: str = Field(..., example="rahul.cse@srit.ac.in", pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(..., min_length=8, description="Minimum 8 characters")
     full_name: str = Field(..., example="Rahul Sharma")
-    department: str = Field(..., example="CSE", description="Department code")
-    batch_year: str = Field(..., example="2022-2026", description="Academic batch")
+    department: str = Field(default="GENERAL", example="CSE", description="Department code")
+    batch_year: str = Field(default="2022-2026", example="2022-2026", description="Academic batch")
+
+    def get_tenant_id(self) -> str:
+        tid = self.tenant_id or self.college_id
+        if tid and tid.strip():
+            return tid.strip().upper()
+        return "SRIT-ATP"
 
 
 # -------------------------------------------------------------
@@ -74,7 +82,7 @@ class AdminUserProvisionRequest(BaseModel):
     email: str = Field(..., example="prof.sreenivas@srit.ac.in", pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     initial_password: str = Field(..., min_length=8, description="Initial password set by Admin")
     full_name: str = Field(..., example="Dr. K. Sreenivasulu")
-    department: str = Field(..., example="CSE")
+    department: str = Field(default="GENERAL", example="CSE")
 
 
 # -------------------------------------------------------------
@@ -82,13 +90,14 @@ class AdminUserProvisionRequest(BaseModel):
 # -------------------------------------------------------------
 class UserLoginRequest(BaseModel):
     login_identifier: str | None = Field(None, example="22731A0501", description="Email or user_id (Roll number / Staff ID)")
+    login_id: str | None = Field(None, example="22731A0501", description="Alias for login_identifier")
     username: str | None = Field(None, example="22731A0501", description="Alias for login_identifier")
     email: str | None = Field(None, example="student@srit.ac.in", description="Alias for email login")
     roll_number: str | None = Field(None, example="22731A0501", description="Alias for roll number login")
     password: str = Field(..., example="Password123!")
 
     def get_identifier(self) -> str:
-        ident = self.login_identifier or self.username or self.email or self.roll_number
+        ident = self.login_identifier or self.login_id or self.username or self.email or self.roll_number
         if not ident or not ident.strip():
             raise ValueError("Please provide your Roll Number, Staff ID, or Email to login.")
         return ident.strip()

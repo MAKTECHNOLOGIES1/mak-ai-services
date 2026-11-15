@@ -8,31 +8,112 @@
     "python_shared_standard_library"
   ],
   "workers_dev": true,
+  "observability": {
+    "enabled": false,
+    "head_sampling_rate": 1,
+    "redact_query_string": false,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    },
+    "issues": {
+      "enabled": false
+    }
+  },
   "vars": {
     "APP_NAME": "AMK Identity Service",
     "SERVICE_NAME": "identity_service",
     "DB_SCHEMA": "identity_service",
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "development",
+    "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
+    "DB_HOST": "aws-0-ap-south-1.pooler.supabase.com",
+    "DB_PORT": "6543",
+    "DB_NAME": "postgres",
+    "DB_USER": "postgres.enkssiilvwiemxvsqaoy",
+    "DB_SSL_MODE": "require",
+    "JWT_ALGORITHM": "HS256",
+    "DEFAULT_TENANT_ID": "SRIT-ATP"
   },
   "env": {
     "test": {
       "name": "mak-identity-service-test",
       "workers_dev": true,
+      "observability": {
+        "enabled": false,
+        "head_sampling_rate": 1,
+        "redact_query_string": false,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        },
+        "issues": {
+          "enabled": false
+        }
+      },
       "vars": {
         "APP_NAME": "AMK Identity Service",
         "SERVICE_NAME": "identity_service",
         "DB_SCHEMA": "identity_service",
-        "ENVIRONMENT": "test"
+        "ENVIRONMENT": "test",
+        "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
+        "DB_HOST": "aws-0-ap-south-1.pooler.supabase.com",
+        "DB_PORT": "6543",
+        "DB_NAME": "postgres",
+        "DB_USER": "postgres.enkssiilvwiemxvsqaoy",
+        "DB_SSL_MODE": "require",
+        "JWT_ALGORITHM": "HS256",
+        "DEFAULT_TENANT_ID": "SRIT-ATP"
       }
     },
     "prod": {
       "name": "mak-identity-service",
       "workers_dev": true,
+      "observability": {
+        "enabled": false,
+        "head_sampling_rate": 1,
+        "redact_query_string": false,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        },
+        "issues": {
+          "enabled": false
+        }
+      },
       "vars": {
         "APP_NAME": "AMK Identity Service",
         "SERVICE_NAME": "identity_service",
         "DB_SCHEMA": "identity_service",
-        "ENVIRONMENT": "production"
+        "ENVIRONMENT": "production",
+        "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
+        "DB_HOST": "aws-0-ap-south-1.pooler.supabase.com",
+        "DB_PORT": "6543",
+        "DB_NAME": "postgres",
+        "DB_USER": "postgres.enkssiilvwiemxvsqaoy",
+        "DB_SSL_MODE": "require",
+        "JWT_ALGORITHM": "HS256",
+        "DEFAULT_TENANT_ID": "SRIT-ATP"
       }
     }
   }

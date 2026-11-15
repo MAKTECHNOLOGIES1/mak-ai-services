@@ -105,117 +105,118 @@ export async function registerStudent(studentData) {
   } catch (err) {
     if (base !== API_CONFIG.IDENTITY_URL) {
       return await fallbackDirectRegister(payload, err);
-      throw err;
     }
+    throw err;
   }
+}
 
 export async function provisionStaff(staffData, token) {
-    const base = getApiBaseUrl();
-    const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.AUTH_PROVISION_USER}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(staffData)
-    });
+  const base = getApiBaseUrl();
+  const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.AUTH_PROVISION_USER}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(staffData)
+  });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Staff provisioning failed');
-    }
-    return data;
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || 'Staff provisioning failed');
   }
+  return data;
+}
 
-  export async function fetchUserProfile(token) {
-    const base = getApiBaseUrl();
-    const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.AUTH_ME}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      }
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Session expired or invalid');
+export async function fetchUserProfile(token) {
+  const base = getApiBaseUrl();
+  const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.AUTH_ME}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
     }
-    return data;
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || 'Session expired or invalid');
   }
+  return data;
+}
 
-  export async function fetchRoles() {
-    const base = getApiBaseUrl();
-    try {
-      const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.ROLES}`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (res.ok) return await res.json();
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.detail || 'Failed to fetch roles from backend');
-    } catch (e) {
-      console.warn('Backend roles fetch error:', e?.message);
-      throw e;
-    }
-  }
-
-  export async function fetchTenantUsers(token, filters = {}) {
-    const base = getApiBaseUrl();
-    const params = new URLSearchParams();
-    if (filters.role_id) params.append('role_id', filters.role_id);
-    if (filters.department) params.append('department', filters.department);
-
-    const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.USERS}${query}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      }
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch users from database');
-    }
-    return data;
-  }
-
-  export async function toggleUserStatus(targetUserId, isActive, token) {
-    const base = getApiBaseUrl();
-    const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.USERS}/${targetUserId}/status?is_active=${isActive}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      }
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to update user status');
-    }
-    return data;
-  }
-
-  export async function createRole(roleData, token) {
-    const base = getApiBaseUrl();
+export async function fetchRoles() {
+  const base = getApiBaseUrl();
+  try {
     const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.ROLES}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(roleData)
+      headers: { 'Accept': 'application/json' }
     });
+    if (res.ok) return await res.json();
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || 'Failed to fetch roles from backend');
+  } catch (e) {
+    console.warn('Backend roles fetch error:', e?.message);
+    throw e;
+  }
+}
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to create dynamic role');
+export async function fetchTenantUsers(token, filters = {}) {
+  const base = getApiBaseUrl();
+  const params = new URLSearchParams();
+  if (filters.role_id) params.append('role_id', filters.role_id);
+  if (filters.department) params.append('department', filters.department);
+
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.USERS}${query}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
     }
-    return data;
-  }
+  });
 
-  export async function fetchHealthCheck() {
-    const base = getApiBaseUrl();
-    const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.HEALTH}`);
-    return await res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || 'Failed to fetch users from database');
   }
+  return data;
+}
+
+export async function toggleUserStatus(targetUserId, isActive, token) {
+  const base = getApiBaseUrl();
+  const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.USERS}/${targetUserId}/status?is_active=${isActive}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || 'Failed to update user status');
+  }
+  return data;
+}
+
+export async function createRole(roleData, token) {
+  const base = getApiBaseUrl();
+  const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.ROLES}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(roleData)
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || 'Failed to create dynamic role');
+  }
+  return data;
+}
+
+export async function fetchHealthCheck() {
+  const base = getApiBaseUrl();
+  const res = await fetch(`${base}${API_CONFIG.ENDPOINTS.HEALTH}`);
+  return await res.json();
+}

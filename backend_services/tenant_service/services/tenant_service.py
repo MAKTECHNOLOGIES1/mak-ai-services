@@ -1,223 +1,250 @@
 """
 Tenant Business Logic Service
-Handles college onboarding, module feature toggling, and stats aggregation
+Handles college onboarding, module feature toggling, and stats aggregation.
+Uses Supabase PostgREST via lightweight HTTP client.
 """
 
 import logging
-from typing import List, Optional
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from models.module_model import TenantModule
-from models.tenant_model import Tenant
+import uuid
+from typing import Any, List, Optional
+
+from core.database import SupabaseClient
+from models.module_model import tenant_module_from_row
+from models.tenant_model import tenant_from_row
 from schemas.tenant_schemas import TenantCreate, TenantResponse, TenantStatsResponse, TenantUpdate
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODULES = ["COLLEGE_AI", "FACULTY_AI", "PROJECT_STUDIO", "RAG_SYLLABUS"]
 
+
 class TenantService:
     @staticmethod
-    def _to_response(tenant: Tenant, enabled_modules: Optional[List[str]] = None) -> TenantResponse:
-        modules = enabled_modules
-        if modules is None:
-            if hasattr(tenant, "modules") and tenant.modules:
-                modules = [m.module_key for m in tenant.modules if m.is_enabled]
-            else:
-                modules = []
+    def _to_response(tenant: dict, enabled_modules: Optional[List[str]] = None) -> TenantResponse:
+        modules = enabled_modules if enabled_modules is not None else []
 
         return TenantResponse(
-            tenant_id=tenant.tenant_id,
-            name=tenant.name,
-            university_affiliation=tenant.university_affiliation,
-            tier=tenant.tier,
-            max_students=tenant.max_students,
-            current_students=tenant.current_students,
-            max_faculty=tenant.max_faculty,
-            current_faculty=tenant.current_faculty,
-            monthly_ai_token_quota=tenant.monthly_ai_token_quota,
-            logo_url=tenant.logo_url,
-            contact_email=tenant.contact_email,
-            is_active=tenant.is_active,
+            tenant_id=tenant["tenant_id"],
+            name=tenant["name"],
+            university_affiliation=tenant.get("university_affiliation", "JNTUA"),
+            tier=tenant.get("tier", "STARTER"),
+            max_students=tenant.get("max_students", 60),
+            current_students=tenant.get("current_students", 0),
+            max_faculty=tenant.get("max_faculty", 5),
+            current_faculty=tenant.get("current_faculty", 0),
+            monthly_ai_token_quota=tenant.get("monthly_ai_token_quota", 5000000),
+            logo_url=tenant.get("logo_url"),
+            contact_email=tenant.get("contact_email"),
+            is_active=tenant.get("is_active", True),
             enabled_modules=modules,
-            created_at=tenant.created_at,
-            updated_at=tenant.updated_at
+            created_at=tenant.get("created_at"),
+            updated_at=tenant.get("updated_at"),
         )
 
     @staticmethod
-    async def get_tenant_by_id(db: AsyncSession, tenant_id: str) -> Optional[TenantResponse]:
-        result = await db.execute(select(Tenant).where(Tenant.tenant_id == tenant_id))
-        tenant = result.scalar_one_or_none()
-        if not tenant:
+    async def get_tenant_by_id(db: SupabaseClient, tenant_id: str) -> Optional[TenantResponse]:
+        row = await db.select("tenants", filters={"tenant_id": f"eq.{tenant_id}"}, single=True)
+        if not row:
             return None
-        return TenantService._to_response(tenant)
+        tenant = tenant_from_row(row)
+
+        # Fetch enabled modules
+        mod_rows = await db.select(
+            "tenant_modules",
+            columns="module_key",
+            filters={"tenant_id": f"eq.{tenant_id}", "is_enabled": "eq.true"},
+        )
+        modules = [m["module_key"] for m in (mod_rows or [])]
+        return TenantService._to_response(tenant, modules)
 
     @staticmethod
     async def list_tenants(
-        db: AsyncSession,
+        db: SupabaseClient,
         skip: int = 0,
-        limit: int = 50
+        limit: int = 50,
     ) -> List[TenantResponse]:
-        result = await db.execute(
-            select(Tenant)
-            .order_by(Tenant.created_at.desc())
-            .offset(skip)
-            .limit(limit)
+        rows = await db.select(
+            "tenants",
+            order="created_at.desc",
+            offset=skip,
+            limit=limit,
         )
-        tenants = result.scalars().all()
-        return [TenantService._to_response(t) for t in tenants]
+        results = []
+        for row in (rows or []):
+            tenant = tenant_from_row(row)
+            results.append(TenantService._to_response(tenant))
+        return results
 
     @staticmethod
-    async def create_tenant(db: AsyncSession, payload: TenantCreate) -> TenantResponse:
+    async def create_tenant(db: SupabaseClient, payload: TenantCreate) -> TenantResponse:
         # Check if already exists
-        existing = await db.execute(select(Tenant).where(Tenant.tenant_id == payload.tenant_id))
-        if existing.scalar_one_or_none():
+        existing = await db.select("tenants", filters={"tenant_id": f"eq.{payload.tenant_id}"}, single=True)
+        if existing:
             raise ValueError(f"Tenant with ID '{payload.tenant_id}' already exists.")
 
-        new_tenant = Tenant(
-            tenant_id=payload.tenant_id.strip().upper(),
-            name=payload.name.strip(),
-            university_affiliation=payload.university_affiliation.strip(),
-            tier=payload.tier.strip().upper(),
-            max_students=payload.max_students,
-            max_faculty=payload.max_faculty,
-            monthly_ai_token_quota=payload.monthly_ai_token_quota,
-            contact_email=str(payload.contact_email) if payload.contact_email else None,
-            logo_url=payload.logo_url,
-            is_active=True
-        )
-        db.add(new_tenant)
-        await db.flush()
+        new_row: dict[str, Any] = {
+            "tenant_id": payload.tenant_id.strip().upper(),
+            "name": payload.name.strip(),
+            "university_affiliation": payload.university_affiliation.strip(),
+            "tier": payload.tier.strip().upper(),
+            "max_students": payload.max_students,
+            "max_faculty": payload.max_faculty,
+            "current_students": 0,
+            "current_faculty": 0,
+            "monthly_ai_token_quota": payload.monthly_ai_token_quota,
+            "contact_email": str(payload.contact_email) if payload.contact_email else None,
+            "logo_url": payload.logo_url,
+            "is_active": True,
+        }
+        inserted = await db.insert("tenants", new_row)
+        if not inserted:
+            raise ValueError("Failed to insert tenant.")
 
         # Add initial modules
         modules_to_add = payload.enabled_modules or DEFAULT_MODULES
         for mod_key in modules_to_add:
-            db.add(TenantModule(
-                tenant_id=new_tenant.tenant_id,
-                module_key=mod_key.strip().upper(),
-                is_enabled=True
-            ))
+            await db.insert("tenant_modules", {
+                "id": str(uuid.uuid4()),
+                "tenant_id": new_row["tenant_id"],
+                "module_key": mod_key.strip().upper(),
+                "is_enabled": True,
+            })
 
-        await db.commit()
-        await db.refresh(new_tenant)
-        return TenantService._to_response(new_tenant, modules_to_add)
+        tenant = tenant_from_row(inserted)
+        return TenantService._to_response(tenant, modules_to_add)
 
     @staticmethod
     async def update_tenant(
-        db: AsyncSession,
+        db: SupabaseClient,
         tenant_id: str,
-        payload: TenantUpdate
+        payload: TenantUpdate,
     ) -> Optional[TenantResponse]:
-        result = await db.execute(select(Tenant).where(Tenant.tenant_id == tenant_id))
-        tenant = result.scalar_one_or_none()
-        if not tenant:
+        update_data = payload.model_dump(exclude_unset=True)
+        if not update_data:
+            return await TenantService.get_tenant_by_id(db, tenant_id)
+
+        # Normalize tier to uppercase
+        if "tier" in update_data and update_data["tier"] is not None:
+            update_data["tier"] = str(update_data["tier"]).upper()
+        if "contact_email" in update_data and update_data["contact_email"] is not None:
+            update_data["contact_email"] = str(update_data["contact_email"])
+
+        # Remove None values
+        clean_data = {k: v for k, v in update_data.items() if v is not None}
+
+        updated = await db.update(
+            "tenants",
+            filters={"tenant_id": f"eq.{tenant_id}"},
+            values=clean_data,
+        )
+        if not updated:
             return None
 
-        update_data = payload.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            if key == "tier" and value is not None:
-                setattr(tenant, key, str(value).upper())
-            elif key == "contact_email" and value is not None:
-                setattr(tenant, key, str(value))
-            elif value is not None:
-                setattr(tenant, key, value)
-
-        await db.commit()
-        await db.refresh(tenant)
+        tenant = tenant_from_row(updated)
         return TenantService._to_response(tenant)
 
     @staticmethod
-    async def get_tenant_stats(db: AsyncSession, tenant_id: str) -> Optional[TenantStatsResponse]:
-        result = await db.execute(select(Tenant).where(Tenant.tenant_id == tenant_id))
-        tenant = result.scalar_one_or_none()
-        if not tenant:
+    async def get_tenant_stats(db: SupabaseClient, tenant_id: str) -> Optional[TenantStatsResponse]:
+        row = await db.select("tenants", filters={"tenant_id": f"eq.{tenant_id}"}, single=True)
+        if not row:
             return None
 
-        student_pct = round((tenant.current_students / tenant.max_students) * 100, 1) if tenant.max_students > 0 else 0.0
-        faculty_pct = round((tenant.current_faculty / tenant.max_faculty) * 100, 1) if tenant.max_faculty > 0 else 0.0
+        tenant = tenant_from_row(row)
+        max_stu = tenant["max_students"]
+        max_fac = tenant["max_faculty"]
+        cur_stu = tenant["current_students"]
+        cur_fac = tenant["current_faculty"]
+
+        student_pct = round((cur_stu / max_stu) * 100, 1) if max_stu > 0 else 0.0
+        faculty_pct = round((cur_fac / max_fac) * 100, 1) if max_fac > 0 else 0.0
         warning = student_pct >= 90.0 or faculty_pct >= 90.0
 
         return TenantStatsResponse(
-            tenant_id=tenant.tenant_id,
-            name=tenant.name,
-            tier=tenant.tier,
-            student_seats_used=tenant.current_students,
-            student_seats_max=tenant.max_students,
+            tenant_id=tenant["tenant_id"],
+            name=tenant["name"],
+            tier=tenant["tier"],
+            student_seats_used=cur_stu,
+            student_seats_max=max_stu,
             student_utilization_pct=student_pct,
-            faculty_seats_used=tenant.current_faculty,
-            faculty_seats_max=tenant.max_faculty,
+            faculty_seats_used=cur_fac,
+            faculty_seats_max=max_fac,
             faculty_utilization_pct=faculty_pct,
             is_capacity_warning=warning,
-            monthly_ai_token_quota=tenant.monthly_ai_token_quota,
-            is_active=tenant.is_active
+            monthly_ai_token_quota=tenant["monthly_ai_token_quota"],
+            is_active=tenant["is_active"],
         )
 
     @staticmethod
-    async def get_tenant_modules(db: AsyncSession, tenant_id: str) -> List[str]:
-        result = await db.execute(
-            select(TenantModule)
-            .where(TenantModule.tenant_id == tenant_id, TenantModule.is_enabled == True)
+    async def get_tenant_modules(db: SupabaseClient, tenant_id: str) -> List[str]:
+        rows = await db.select(
+            "tenant_modules",
+            columns="module_key",
+            filters={"tenant_id": f"eq.{tenant_id}", "is_enabled": "eq.true"},
         )
-        return [m.module_key for m in result.scalars().all()]
+        return [m["module_key"] for m in (rows or [])]
 
     @staticmethod
     async def toggle_module(
-        db: AsyncSession,
+        db: SupabaseClient,
         tenant_id: str,
         module_key: str,
-        is_enabled: bool
+        is_enabled: bool,
     ) -> List[str]:
         clean_key = module_key.strip().upper()
-        result = await db.execute(
-            select(TenantModule)
-            .where(TenantModule.tenant_id == tenant_id, TenantModule.module_key == clean_key)
+
+        # Check if module record exists
+        existing = await db.select(
+            "tenant_modules",
+            filters={"tenant_id": f"eq.{tenant_id}", "module_key": f"eq.{clean_key}"},
+            single=True,
         )
-        mod = result.scalar_one_or_none()
 
-        if mod:
-            mod.is_enabled = is_enabled
+        if existing:
+            await db.update(
+                "tenant_modules",
+                filters={"tenant_id": f"eq.{tenant_id}", "module_key": f"eq.{clean_key}"},
+                values={"is_enabled": is_enabled},
+            )
         else:
-            db.add(TenantModule(
-                tenant_id=tenant_id,
-                module_key=clean_key,
-                is_enabled=is_enabled
-            ))
+            await db.insert("tenant_modules", {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "module_key": clean_key,
+                "is_enabled": is_enabled,
+            })
 
-        await db.commit()
         return await TenantService.get_tenant_modules(db, tenant_id)
 
     @staticmethod
-    async def seed_default_tenant_if_missing(db: AsyncSession):
-        """Seeds default college SRIT-ATP if not present"""
+    async def seed_default_tenant_if_missing(db: SupabaseClient):
+        """Seeds default college SRIT-ATP if not present."""
         from core.config import settings
         default_id = settings.DEFAULT_TENANT_ID
 
-        result = await db.execute(select(Tenant).where(Tenant.tenant_id == default_id))
-        tenant = result.scalar_one_or_none()
+        existing = await db.select("tenants", filters={"tenant_id": f"eq.{default_id}"}, single=True)
+        if existing:
+            return
 
-        if not tenant:
-            logger.info("Seeding default tenant %s into Supabase...", default_id)
-            new_tenant = Tenant(
-                tenant_id=default_id,
-                name="Srinivasa Ramanujan Institute of Technology",
-                university_affiliation="JNTUA",
-                tier="STARTER",
-                max_students=60,
-                max_faculty=5,
-                current_students=0,
-                current_faculty=0,
-                monthly_ai_token_quota=5000000,
-                contact_email="admin@srit.ac.in",
-                is_active=True
-            )
-            db.add(new_tenant)
-            await db.flush()
+        logger.info("Seeding default tenant %s via Supabase REST...", default_id)
+        await db.insert("tenants", {
+            "tenant_id": default_id,
+            "name": "Srinivasa Ramanujan Institute of Technology",
+            "university_affiliation": "JNTUA",
+            "tier": "STARTER",
+            "max_students": 60,
+            "max_faculty": 5,
+            "current_students": 0,
+            "current_faculty": 0,
+            "monthly_ai_token_quota": 5000000,
+            "contact_email": "admin@srit.ac.in",
+            "is_active": True,
+        })
 
-            for mod_key in DEFAULT_MODULES:
-                db.add(TenantModule(
-                    tenant_id=default_id,
-                    module_key=mod_key,
-                    is_enabled=True
-                ))
-            await db.commit()
-            logger.info("Default tenant %s seeded successfully.", default_id)
-
+        for mod_key in DEFAULT_MODULES:
+            await db.insert("tenant_modules", {
+                "id": str(uuid.uuid4()),
+                "tenant_id": default_id,
+                "module_key": mod_key,
+                "is_enabled": True,
+            })
+        logger.info("Default tenant %s seeded successfully.", default_id)

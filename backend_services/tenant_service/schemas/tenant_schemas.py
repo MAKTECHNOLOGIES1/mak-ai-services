@@ -4,7 +4,7 @@ Pydantic Schemas for Tenant College Management
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class TenantCreate(BaseModel):
     tenant_id: str = Field(..., min_length=2, max_length=50, example="SRIT-ATP")
@@ -14,7 +14,7 @@ class TenantCreate(BaseModel):
     max_students: int = Field(default=60, ge=1)
     max_faculty: int = Field(default=5, ge=1)
     monthly_ai_token_quota: int = Field(default=5000000, ge=100000)
-    contact_email: Optional[EmailStr] = None
+    contact_email: Optional[str] = None
     logo_url: Optional[str] = None
     enabled_modules: List[str] = Field(
         default=["COLLEGE_AI", "FACULTY_AI", "PROJECT_STUDIO", "RAG_SYLLABUS"]
@@ -27,7 +27,7 @@ class TenantUpdate(BaseModel):
     max_students: Optional[int] = Field(default=None, ge=1)
     max_faculty: Optional[int] = Field(default=None, ge=1)
     monthly_ai_token_quota: Optional[int] = Field(default=None, ge=100000)
-    contact_email: Optional[EmailStr] = None
+    contact_email: Optional[str] = None
     logo_url: Optional[str] = None
     is_active: Optional[bool] = None
 

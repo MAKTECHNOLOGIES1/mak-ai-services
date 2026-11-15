@@ -12,6 +12,8 @@ EXCLUDED_DEPS = {
     "greenlet",
     "asyncpg",
     "httpx",
+    "sqlalchemy",
+    "email-validator",
     "workers-py",
     "workers-runtime-sdk",
 }

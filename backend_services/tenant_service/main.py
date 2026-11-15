@@ -1,39 +1,24 @@
 """
 AMK Tenant Service Application Entrypoint
-Handles college onboarding, seat cap validations, and module feature toggles
+Handles college onboarding, seat cap validations, and module feature toggles.
+Lightweight — uses Supabase PostgREST (no SQLAlchemy) for Cloudflare Workers compatibility.
 """
 
-from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from core.database import AsyncSessionLocal
 from routes.internal_routes import router as internal_router
 from routes.tenant_routes import router as tenant_router
-from services.tenant_service import TenantService
 
 logger = logging.getLogger(__name__)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Ensure default tenant exists in Supabase
-    try:
-        if AsyncSessionLocal is not None:
-            async with AsyncSessionLocal() as session:
-                await TenantService.seed_default_tenant_if_missing(session)
-    except Exception as e:
-        logger.warning("Could not check/seed default tenant on startup: %s", e)
-    yield
-    # Shutdown logic if any
 
 app = FastAPI(
     title=settings.APP_NAME,
     description="Multi-tenant college onboarding and hard seat cap governance service",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan
+    redoc_url="/redoc"
 )
 
 # CORS Configuration for Gateway and Frontend

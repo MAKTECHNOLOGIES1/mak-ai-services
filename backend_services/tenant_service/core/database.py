@@ -36,8 +36,13 @@ try:
         autoflush=False
     )
 except Exception:
-    from sqlalchemy.orm import declarative_base
-    Base = declarative_base()
+    try:
+        from sqlalchemy.orm import declarative_base
+        Base = declarative_base()
+    except Exception:
+        class Base:  # type: ignore
+            pass
+
     AsyncSession = None  # type: ignore
     engine = None
     AsyncSessionLocal = None  # type: ignore

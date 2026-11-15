@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - testing-1
-    paths:
-      - 'frontend/**'
   workflow_dispatch:
     inputs:
       target_env:
@@ -42,6 +40,7 @@ jobs:
       target_env: ${{ steps.inspect.outputs.target_env }}
       version: ${{ steps.inspect.outputs.version }}
       r2_key: ${{ steps.inspect.outputs.r2_key }}
+      should_deploy: ${{ steps.inspect.outputs.should_deploy }}
     steps:
       - name: Verify Required Cloudflare Credentials
         run: |
@@ -59,6 +58,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
+          fetch-depth: 2
 
       - name: Inspect Frontend Version
         id: inspect
@@ -66,10 +66,24 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             TARGET_ENV="test"
             INPUT_VER=""
-            echo "⚡ Push detected on branch '${{ github.ref_name }}' (frontend changes) -> Auto-deploying to 'test' environment."
+            echo "⚡ Push detected on branch '${{ github.ref_name }}' -> Targeting 'test' environment."
+
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files)
+            echo "Changed files in this commit:"
+            echo "$CHANGED_FILES"
+
+            HAS_FRONTEND=$(echo "$CHANGED_FILES" | grep -E '^(frontend|\.github/workflows/deploy-frontend)' || true)
+            if [ -n "$HAS_FRONTEND" ]; then
+              echo "Frontend files modified -> proceeding to deploy."
+              echo "should_deploy=true" >> $GITHUB_OUTPUT
+            else
+              echo "No frontend files were modified in this push."
+              echo "should_deploy=false" >> $GITHUB_OUTPUT
+            fi
           else
             TARGET_ENV="${{ github.event.inputs.target_env }}"
             INPUT_VER="${{ github.event.inputs.version_tag }}"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
           fi
 
           INPUT_VER=$(echo "$INPUT_VER" | xargs | tr '[:upper:]' '[:lower:]')
@@ -95,6 +109,7 @@ jobs:
   validate:
     name: 1. Code Quality & Lint Check
     needs: resolve-and-check
+    if: needs.resolve-and-check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -119,6 +134,7 @@ jobs:
   build-and-archive:
     name: 2. Build Assets & Archive
     needs: [resolve-and-check, validate]
+    if: needs.resolve-and-check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -156,6 +172,7 @@ jobs:
   deploy:
     name: 3. Deploy to Cloudflare (${{ needs.resolve-and-check.outputs.target_env }})
     needs: [resolve-and-check, validate, build-and-archive]
+    if: needs.resolve-and-check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     outputs:
       deployed_url: ${{ steps.deploy_ui.outputs.deployed_url }}
@@ -213,6 +230,7 @@ jobs:
     steps:
       - name: Generate Pipeline Execution Report
         run: |
+          SHOULD_DEPLOY="${{ needs.resolve-and-check.outputs.should_deploy }}"
           TARGET_ENV="${{ needs.resolve-and-check.outputs.target_env }}"
           VERSION="${{ needs.resolve-and-check.outputs.version }}"
           URL="${{ needs.deploy.outputs.deployed_url }}"
@@ -223,6 +241,13 @@ jobs:
           echo "- **Version Tag**: \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Source Branch**: \`${{ github.ref_name }}\` (\`${{ github.sha }}\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered By**: \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$SHOULD_DEPLOY" != "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **Skipped**: No frontend files were changed in this commit." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
           if [ -n "$URL" ]; then
             echo "- **Live URL**: [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
           fi

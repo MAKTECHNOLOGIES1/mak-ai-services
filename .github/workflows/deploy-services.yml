@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - testing-1
-    paths:
-      - 'backend_services/**'
   workflow_dispatch:
     inputs:
       service_name:
@@ -77,6 +75,7 @@ jobs:
       version: ${{ steps.inspect.outputs.version }}
       r2_key: ${{ steps.inspect.outputs.r2_key }}
       action: ${{ steps.inspect.outputs.action }}
+      should_deploy: ${{ steps.inspect.outputs.should_deploy }}
     steps:
       - name: Verify Required Cloudflare Credentials
         run: |
@@ -102,20 +101,33 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             TARGET_ENV="test"
             INPUT_VER=""
-            echo "⚡ Push detected on branch '${{ github.ref_name }}' -> Auto-deploying to 'test' environment."
+            echo "⚡ Push detected on branch '${{ github.ref_name }}' -> Targeting 'test' environment."
 
-            # Detect modified backend services
+            # Detect modified backend services from commit diff
             CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files)
+            echo "Changed files in this commit:"
+            echo "$CHANGED_FILES"
+
             MODIFIED_SERVICES=$(echo "$CHANGED_FILES" | grep '^backend_services/' | cut -d'/' -f2 | sort -u | grep -v '^$' || true)
 
-            if [ -z "$MODIFIED_SERVICES" ]; then
-              echo "Notice: No individual service path detected in commit diff. Scanning backend_services..."
-              SERVICES=$(ls -d backend_services/*/ | sed 's|backend_services/||' | sed 's|/||' | jq -R -s -c 'split("\n")[:-1]')
-              SERVICE_NAME="all_services"
-            else
-              echo "Modified services detected: $MODIFIED_SERVICES"
+            if [ -n "$MODIFIED_SERVICES" ]; then
+              echo "Modified backend service(s) detected: $MODIFIED_SERVICES"
               SERVICES=$(echo "$MODIFIED_SERVICES" | jq -R -s -c 'split("\n")[:-1]')
               SERVICE_NAME=$(echo "$MODIFIED_SERVICES" | head -n 1)
+              echo "should_deploy=true" >> $GITHUB_OUTPUT
+            else
+              HAS_BACKEND_CONF=$(echo "$CHANGED_FILES" | grep -E '^(backend_services|\.github/workflows/deploy-services|\.github/scripts/convert_requirements|version\.json)' || true)
+              if [ -n "$HAS_BACKEND_CONF" ]; then
+                echo "Backend-related workflow or config updated. Deploying tenant_service..."
+                SERVICES='["tenant_service"]'
+                SERVICE_NAME="tenant_service"
+                echo "should_deploy=true" >> $GITHUB_OUTPUT
+              else
+                echo "No backend services were modified in this push."
+                SERVICES="[]"
+                SERVICE_NAME="none"
+                echo "should_deploy=false" >> $GITHUB_OUTPUT
+              fi
             fi
           else
             TARGET_ENV="${{ github.event.inputs.target_env }}"
@@ -127,6 +139,7 @@ jobs:
             else
               SERVICES=$(echo "[\"$SERVICE_NAME\"]")
             fi
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
           fi
 
           INPUT_VER=$(echo "$INPUT_VER" | xargs | tr '[:upper:]' '[:lower:]')
@@ -174,6 +187,7 @@ jobs:
   validate:
     name: 1. Code Quality & Syntax Check
     needs: resolve-and-check
+    if: needs.resolve-and-check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -208,6 +222,7 @@ jobs:
   build-and-archive:
     name: 2. Package & Archive Artifact
     needs: [resolve-and-check, validate]
+    if: needs.resolve-and-check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source Code
@@ -251,6 +266,7 @@ jobs:
   deploy:
     name: 3. Deploy to Cloudflare (${{ needs.resolve-and-check.outputs.target_env }})
     needs: [resolve-and-check, validate, build-and-archive]
+    if: needs.resolve-and-check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     outputs:
       deployed_url: ${{ steps.deploy_worker.outputs.deployed_url }}
@@ -352,6 +368,7 @@ jobs:
     steps:
       - name: Generate Pipeline Execution Report
         run: |
+          SHOULD_DEPLOY="${{ needs.resolve-and-check.outputs.should_deploy }}"
           SERVICE="${{ needs.resolve-and-check.outputs.service_name }}"
           TARGET_ENV="${{ needs.resolve-and-check.outputs.target_env }}"
           VERSION="${{ needs.resolve-and-check.outputs.version }}"
@@ -361,9 +378,15 @@ jobs:
           echo "- **Trigger Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Target Environment**: \`$TARGET_ENV\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Target Service(s)**: \`$SERVICE\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Tag**: \`$VERSION\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Source Branch**: \`${{ github.ref_name }}\` (\`${{ github.sha }}\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered By**: \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$SHOULD_DEPLOY" != "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **Skipped**: No backend services were changed in this commit." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
           if [ -n "$URL" ]; then
             echo "- **Live URL**: [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
           fi

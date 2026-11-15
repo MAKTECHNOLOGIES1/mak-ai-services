@@ -309,6 +309,11 @@ jobs:
 
             cd "$GITHUB_WORKSPACE/$SVC_PATH"
 
+            # Ensure build venvs are excluded from Wrangler's module upload
+            touch .gitignore
+            grep -qxF ".venv-workers/" .gitignore || echo ".venv-workers/" >> .gitignore
+            grep -qxF ".venv*/" .gitignore || echo ".venv*/" >> .gitignore
+
             # Auto-convert requirements.txt to pyproject.toml if missing
             python "$GITHUB_WORKSPACE/.github/scripts/convert_requirements.py" .
 

@@ -79,6 +79,16 @@ except (ImportError, Exception):
 
 async def on_fetch(request, env):
     try:
+        import os
+        # Sync Cloudflare Worker secrets into os.environ for Pydantic Settings
+        if hasattr(env, "items"):
+            for k, v in env.items():
+                os.environ[str(k)] = str(v)
+        elif hasattr(env, "__dict__"):
+            for k, v in env.__dict__.items():
+                if not str(k).startswith("_"):
+                    os.environ[str(k)] = str(v)
+
         from workers import asgi
         return await asgi.fetch(app, request, env)
     except Exception:

@@ -13,6 +13,7 @@ VALUES (
     250,
     20,
     1,
+    
     2
 ) ON CONFLICT (tenant_id) DO NOTHING;
 

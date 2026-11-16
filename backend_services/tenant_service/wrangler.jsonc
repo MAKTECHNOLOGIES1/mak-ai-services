@@ -8,6 +8,25 @@
     "python_shared_standard_library"
   ],
   "workers_dev": true,
+  "observability": {
+    "enabled": false,
+    "head_sampling_rate": 1,
+    "redact_query_string": false,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    },
+    "issues": {
+      "enabled": false
+    }
+  },
   "vars": {
     "APP_NAME": "AMK Tenant Service",
     "SERVICE_NAME": "tenant_service",
@@ -18,6 +37,25 @@
     "test": {
       "name": "mak-tenant-service-test",
       "workers_dev": true,
+      "observability": {
+        "enabled": false,
+        "head_sampling_rate": 1,
+        "redact_query_string": false,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        },
+        "issues": {
+          "enabled": false
+        }
+      },
       "vars": {
         "APP_NAME": "AMK Tenant Service",
         "SERVICE_NAME": "tenant_service",
@@ -28,6 +66,25 @@
     "prod": {
       "name": "mak-tenant-service",
       "workers_dev": true,
+      "observability": {
+        "enabled": false,
+        "head_sampling_rate": 1,
+        "redact_query_string": false,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true
+        },
+        "issues": {
+          "enabled": false
+        }
+      },
       "vars": {
         "APP_NAME": "AMK Tenant Service",
         "SERVICE_NAME": "tenant_service",

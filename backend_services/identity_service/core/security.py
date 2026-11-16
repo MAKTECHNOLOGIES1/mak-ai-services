@@ -71,7 +71,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def _get_jwt_secret() -> str:
     """Ensure JWT_SECRET is configured in environment / Cloudflare Secrets."""
-    secret = settings.JWT_SECRET
+    secret = os.getenv("JWT_SECRET") or settings.JWT_SECRET
     if not secret:
         raise ValueError("JWT_SECRET is not configured in .env or Cloudflare Worker Secrets.")
     return secret

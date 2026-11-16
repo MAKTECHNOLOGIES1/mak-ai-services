@@ -3,6 +3,7 @@ FastAPI Dependencies for Identity Service
 Provides JWT authentication, Role-Based Access Control, and inter-service security checks.
 """
 
+import os
 from typing import Any, Callable, List, Optional
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -101,11 +102,12 @@ async def verify_internal_key(
     Verifies inter-service authentication secret key.
     Used by API Gateway and peer microservices for internal queries.
     """
-    if not settings.INTERNAL_SERVICE_KEY:
+    key = os.getenv("INTERNAL_SERVICE_KEY") or settings.INTERNAL_SERVICE_KEY
+    if not key:
         # If no key configured in dev, permit
         return True
 
-    if not x_internal_service_key or x_internal_service_key != settings.INTERNAL_SERVICE_KEY:
+    if not x_internal_service_key or x_internal_service_key != key:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Invalid or missing X-Internal-Service-Key",

@@ -27,28 +27,28 @@
       "enabled": false
     }
   },
+  "vars": {
+    "APP_NAME": "AMK Identity Service",
+    "SERVICE_NAME": "identity_service",
+    "DB_SCHEMA": "identity_service",
+    "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
+    "ENVIRONMENT": "development"
+  },
   "env": {
     "test": {
       "name": "mak-identity-service-test",
       "workers_dev": true,
       "observability": {
         "enabled": false,
-        "head_sampling_rate": 1,
-        "redact_query_string": false,
-        "logs": {
-          "enabled": true,
-          "head_sampling_rate": 1,
-          "invocation_logs": true,
-          "persist": true
-        },
-        "traces": {
-          "enabled": true,
-          "head_sampling_rate": 1,
-          "persist": true
-        },
-        "issues": {
-          "enabled": false
-        }
+        "logs": { "enabled": true, "persist": true },
+        "traces": { "enabled": true, "persist": true }
+      },
+      "vars": {
+        "APP_NAME": "AMK Identity Service",
+        "SERVICE_NAME": "identity_service",
+        "DB_SCHEMA": "identity_service",
+        "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
+        "ENVIRONMENT": "test"
       }
     },
     "prod": {
@@ -56,22 +56,15 @@
       "workers_dev": true,
       "observability": {
         "enabled": false,
-        "head_sampling_rate": 1,
-        "redact_query_string": false,
-        "logs": {
-          "enabled": true,
-          "head_sampling_rate": 1,
-          "invocation_logs": true,
-          "persist": true
-        },
-        "traces": {
-          "enabled": true,
-          "head_sampling_rate": 1,
-          "persist": true
-        },
-        "issues": {
-          "enabled": false
-        }
+        "logs": { "enabled": true, "persist": true },
+        "traces": { "enabled": true, "persist": true }
+      },
+      "vars": {
+        "APP_NAME": "AMK Identity Service",
+        "SERVICE_NAME": "identity_service",
+        "DB_SCHEMA": "identity_service",
+        "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
+        "ENVIRONMENT": "production"
       }
     }
   }

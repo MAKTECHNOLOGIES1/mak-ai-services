@@ -6,6 +6,7 @@ Compatible with Cloudflare Python Workers (Pyodide) and local development (httpx
 
 import json
 import logging
+import os
 from typing import Any, Optional
 
 from core.config import settings
@@ -112,10 +113,18 @@ async def _fetch(
 class SupabaseClient:
     """Supabase PostgREST async client targeted at identity_service schema."""
 
-    def __init__(self):
-        self.base_url = (settings.SUPABASE_URL or "").rstrip("/")
-        self.api_key = settings.SUPABASE_SERVICE_KEY or ""
-        self.schema = settings.DB_SCHEMA or "identity_service"
+    @property
+    def base_url(self) -> str:
+        url = os.getenv("SUPABASE_URL") or settings.SUPABASE_URL or "https://enkssiilvwiemxvsqaoy.supabase.co"
+        return url.rstrip("/")
+
+    @property
+    def api_key(self) -> str:
+        return os.getenv("SUPABASE_SERVICE_KEY") or settings.SUPABASE_SERVICE_KEY or ""
+
+    @property
+    def schema(self) -> str:
+        return os.getenv("DB_SCHEMA") or settings.DB_SCHEMA or "identity_service"
 
     def _headers(self, prefer: str = "return=representation") -> dict[str, str]:
         headers = {

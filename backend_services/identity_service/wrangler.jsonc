@@ -27,20 +27,6 @@
       "enabled": false
     }
   },
-  "vars": {
-    "APP_NAME": "AMK Identity Service",
-    "SERVICE_NAME": "identity_service",
-    "DB_SCHEMA": "identity_service",
-    "ENVIRONMENT": "development",
-    "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
-    "DB_HOST": "aws-0-ap-south-1.pooler.supabase.com",
-    "DB_PORT": "6543",
-    "DB_NAME": "postgres",
-    "DB_USER": "postgres.enkssiilvwiemxvsqaoy",
-    "DB_SSL_MODE": "require",
-    "JWT_ALGORITHM": "HS256",
-    "DEFAULT_TENANT_ID": "SRIT-ATP"
-  },
   "env": {
     "test": {
       "name": "mak-identity-service-test",
@@ -63,20 +49,6 @@
         "issues": {
           "enabled": false
         }
-      },
-      "vars": {
-        "APP_NAME": "AMK Identity Service",
-        "SERVICE_NAME": "identity_service",
-        "DB_SCHEMA": "identity_service",
-        "ENVIRONMENT": "test",
-        "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
-        "DB_HOST": "aws-0-ap-south-1.pooler.supabase.com",
-        "DB_PORT": "6543",
-        "DB_NAME": "postgres",
-        "DB_USER": "postgres.enkssiilvwiemxvsqaoy",
-        "DB_SSL_MODE": "require",
-        "JWT_ALGORITHM": "HS256",
-        "DEFAULT_TENANT_ID": "SRIT-ATP"
       }
     },
     "prod": {
@@ -100,20 +72,6 @@
         "issues": {
           "enabled": false
         }
-      },
-      "vars": {
-        "APP_NAME": "AMK Identity Service",
-        "SERVICE_NAME": "identity_service",
-        "DB_SCHEMA": "identity_service",
-        "ENVIRONMENT": "production",
-        "SUPABASE_URL": "https://enkssiilvwiemxvsqaoy.supabase.co",
-        "DB_HOST": "aws-0-ap-south-1.pooler.supabase.com",
-        "DB_PORT": "6543",
-        "DB_NAME": "postgres",
-        "DB_USER": "postgres.enkssiilvwiemxvsqaoy",
-        "DB_SSL_MODE": "require",
-        "JWT_ALGORITHM": "HS256",
-        "DEFAULT_TENANT_ID": "SRIT-ATP"
       }
     }
   }

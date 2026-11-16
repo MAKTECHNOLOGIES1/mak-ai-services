@@ -4,7 +4,7 @@ Defines schemas for login, direct student registration (no tenant assigned), and
 """
 
 from typing import Any, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 class RegisterStudentRequest(BaseModel):
@@ -15,7 +15,7 @@ class RegisterStudentRequest(BaseModel):
     """
     roll_number: str = Field(..., min_length=3, max_length=100, description="Student Roll Number (becomes user_id)")
     full_name: str = Field(..., min_length=2, max_length=150, description="Full Name of the student")
-    email: EmailStr = Field(..., description="Student email address")
+    email: str = Field(..., min_length=3, max_length=255, description="Student email address")
     password: str = Field(..., min_length=6, max_length=128, description="Account password")
     department: Optional[str] = Field(default="GENERAL", max_length=50, description="Department (e.g. CSE, ECE)")
     batch_year: Optional[str] = Field(default=None, max_length=20, description="Batch year (e.g. 2022-2026)")
@@ -23,7 +23,7 @@ class RegisterStudentRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """User Login Request."""
-    email: EmailStr = Field(..., description="Registered email address")
+    email: str = Field(..., min_length=3, max_length=255, description="Registered email address")
     password: str = Field(..., min_length=1, description="Account password")
     tenant_id: Optional[str] = Field(default=None, description="Optional tenant ID (only required for college staff)")
 

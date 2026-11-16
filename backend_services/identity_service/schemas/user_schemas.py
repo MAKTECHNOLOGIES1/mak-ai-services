@@ -4,13 +4,13 @@ Defines schemas for admin user provisioning, profile updates, and user queries.
 """
 
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 class ProvisionUserRequest(BaseModel):
     """Admin provisioning request for faculty, staff, or department heads."""
     user_id: str = Field(..., min_length=3, max_length=100, description="Unique Staff/Faculty ID (e.g. FAC-SRIT-002)")
-    email: EmailStr = Field(..., description="Staff official email address")
+    email: str = Field(..., min_length=3, max_length=255, description="Staff official email address")
     password: str = Field(..., min_length=6, max_length=128, description="Initial temporary password")
     full_name: str = Field(..., min_length=2, max_length=150, description="Full Name")
     department: str = Field(default="GENERAL", max_length=50, description="Department code (CSE, ECE, EEE, etc.)")

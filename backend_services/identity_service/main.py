@@ -6,6 +6,8 @@ Compatible with Cloudflare Python Workers (Pyodide ASGI) and local Uvicorn devel
 """
 
 import logging
+import os
+from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -54,11 +56,36 @@ async def health_check():
     return {
         "service": settings.SERVICE_NAME,
         "status": "healthy",
-        "environment": settings.ENVIRONMENT
+        "environment": os.getenv("ENVIRONMENT") or settings.ENVIRONMENT
     }
 
 
-# ── Cloudflare Workers Python ASGI Handler ───────────────────────────────────
+# ── Cloudflare Workers Python ASGI Handler & Secret Sync ─────────────────────
+_worker_env: Any = None
+
+
+def get_secret(key: str, default: str = "") -> str:
+    """Retrieve secret from os.environ, Worker env, or fallback."""
+    val = os.getenv(key)
+    if val:
+        return val
+    global _worker_env
+    if _worker_env is not None:
+        try:
+            v = getattr(_worker_env, key, None)
+            if v is not None:
+                return str(v)
+        except Exception:
+            pass
+        try:
+            v = _worker_env[key]
+            if v is not None:
+                return str(v)
+        except Exception:
+            pass
+    return default
+
+
 try:
     from workers import asgi
     Default = asgi.entrypoint(app)
@@ -67,16 +94,37 @@ except (ImportError, Exception):
 
 
 async def on_fetch(request, env):
+    global _worker_env
+    _worker_env = env
+
     try:
-        import os
-        # Sync Cloudflare Worker secrets into os.environ for Pydantic Settings
+        # 1. Sync via Pyodide JS Object.entries (Cloudflare Workers runtime)
+        try:
+            from js import Object as JsObject
+            for entry in JsObject.entries(env):
+                k = str(entry[0])
+                v = str(entry[1])
+                os.environ[k] = v
+        except Exception:
+            pass
+
+        # 2. Sync via dir(env) for JsProxy attributes
+        try:
+            for k in dir(env):
+                if not k.startswith("_"):
+                    try:
+                        v = getattr(env, k)
+                        if isinstance(v, (str, int, float, bool)):
+                            os.environ[k] = str(v)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 3. Standard dict .items() fallback
         if hasattr(env, "items"):
             for k, v in env.items():
                 os.environ[str(k)] = str(v)
-        elif hasattr(env, "__dict__"):
-            for k, v in env.__dict__.items():
-                if not str(k).startswith("_"):
-                    os.environ[str(k)] = str(v)
 
         from workers import asgi
         return await asgi.fetch(app, request, env)
@@ -91,4 +139,3 @@ async def on_fetch(request, env):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=settings.PORT, reload=settings.DEBUG)
-

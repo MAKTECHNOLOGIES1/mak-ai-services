@@ -73,6 +73,12 @@ def _get_jwt_secret() -> str:
     """Ensure JWT_SECRET is configured in environment / Cloudflare Secrets."""
     secret = os.getenv("JWT_SECRET") or settings.JWT_SECRET
     if not secret:
+        try:
+            from main import get_secret
+            secret = get_secret("JWT_SECRET")
+        except Exception:
+            pass
+    if not secret:
         raise ValueError("JWT_SECRET is not configured in .env or Cloudflare Worker Secrets.")
     return secret
 

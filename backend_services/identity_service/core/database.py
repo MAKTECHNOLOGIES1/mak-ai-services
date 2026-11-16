@@ -120,7 +120,14 @@ class SupabaseClient:
 
     @property
     def api_key(self) -> str:
-        return os.getenv("SUPABASE_SERVICE_KEY") or settings.SUPABASE_SERVICE_KEY or ""
+        key = os.getenv("SUPABASE_SERVICE_KEY") or settings.SUPABASE_SERVICE_KEY
+        if not key:
+            try:
+                from main import get_secret
+                key = get_secret("SUPABASE_SERVICE_KEY")
+            except Exception:
+                pass
+        return key or ""
 
     @property
     def schema(self) -> str:
